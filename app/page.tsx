@@ -717,7 +717,15 @@ export default function Home() {
               <p className="mt-2 text-sm text-slate-300">
                 Organize salário, gastos, parcelados e contas fixas do mês.
               </p>
-              <div className="mt-3 inline-flex rounded-full px-3 py-1 text-xs font-medium ring-1 ring-white/20 {supabaseStatus === "connected" ? "bg-emerald-500/15 text-emerald-200" : supabaseStatus === "error" ? "bg-rose-500/15 text-rose-200" : "bg-white/10 text-slate-200"}">
+              <div
+                className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-medium ring-1 ring-white/20 ${
+                  supabaseStatus === "connected"
+                    ? "bg-emerald-500/15 text-emerald-200"
+                    : supabaseStatus === "error"
+                      ? "bg-rose-500/15 text-rose-200"
+                      : "bg-white/10 text-slate-200"
+                }`}
+              >
                 Banco online: {supabaseStatus === "connected" ? "conectado" : supabaseStatus === "error" ? "com erro" : "verificando..."}
               </div>
             </div>
