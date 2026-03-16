@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabase"
 
 type StatusType = "pago" | "pendente";
 type FixedBillAction = StatusType | "ignorado";
