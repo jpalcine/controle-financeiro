@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase";
 
 type StatusType = "pago" | "pendente";
 type FixedBillAction = StatusType | "ignorado";
@@ -50,6 +50,7 @@ type FixedBillMonthOverride = {
 type SalaryByMonth = Record<string, number>;
 
 type ModalMode = "create" | "edit";
+type SupabaseStatus = "checking" | "connected" | "error";
 
 const STORAGE_KEYS = {
   transactions: "controle-financeiro-transactions",
@@ -193,6 +194,7 @@ export default function Home() {
   const [fixedBills, setFixedBills] = useState<FixedBill[]>([]);
   const [fixedBillOverrides, setFixedBillOverrides] = useState<FixedBillMonthOverride[]>([]);
   const [salaryByMonth, setSalaryByMonth] = useState<SalaryByMonth>({});
+  const [supabaseStatus, setSupabaseStatus] = useState<SupabaseStatus>("checking");
 
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [transactionMode, setTransactionMode] = useState<ModalMode>("create");
@@ -273,6 +275,19 @@ export default function Home() {
         localStorage.removeItem(STORAGE_KEYS.fixedBillsOverrides);
       }
     }
+  }, []);
+
+  useEffect(() => {
+    async function checkSupabaseConnection() {
+      try {
+        const { error } = await supabase.from("transactions").select("id").limit(1);
+        setSupabaseStatus(error ? "error" : "connected");
+      } catch {
+        setSupabaseStatus("error");
+      }
+    }
+
+    checkSupabaseConnection();
   }, []);
 
   useEffect(() => {
@@ -374,6 +389,24 @@ export default function Home() {
   const totalMonth = totalTransactionsMonth + totalInstallmentsMonth + totalFixedBillsMonth;
   const realBalance = currentSalary - totalPaid;
   const projectedBalance = currentSalary - totalPaid - totalPending - totalInstallmentsMonth;
+
+  async function saveTransactionToSupabase(transaction: Transaction) {
+    const [year, month] = transaction.date.slice(0, 7).split("-").map(Number);
+
+    const { error } = await supabase.from("transactions").insert([
+      {
+        description: transaction.description,
+        amount: transaction.amount,
+        type: transaction.status === "pago" ? "saida" : "saida_pendente",
+        year,
+        month,
+      },
+    ]);
+
+    if (error) {
+      throw error;
+    }
+  }
 
   function resetTransactionForm() {
     setDate(`${selectedMonth}-01`);
@@ -478,7 +511,7 @@ export default function Home() {
     setShowFixedBillForm(false);
   }
 
-  function handleSubmitTransaction(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmitTransaction(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const parsedAmount = parseMoney(amount);
 
@@ -509,17 +542,30 @@ export default function Home() {
           )
           .sort((a, b) => b.date.localeCompare(a.date))
       );
-    } else {
-      const newTransaction: Transaction = {
-        id: crypto.randomUUID(),
-        date,
-        description: description.trim(),
-        category,
-        amount: parsedAmount,
-        paymentMethod,
-        status,
-      };
-      setTransactions((prev) => [newTransaction, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
+
+      closeTransactionModal();
+      return;
+    }
+
+    const newTransaction: Transaction = {
+      id: crypto.randomUUID(),
+      date,
+      description: description.trim(),
+      category,
+      amount: parsedAmount,
+      paymentMethod,
+      status,
+    };
+
+    setTransactions((prev) => [newTransaction, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
+
+    try {
+      await saveTransactionToSupabase(newTransaction);
+      setSupabaseStatus("connected");
+    } catch (error) {
+      console.error("Erro ao salvar no Supabase:", error);
+      setSupabaseStatus("error");
+      alert("O lançamento foi salvo localmente, mas falhou ao enviar para o banco online.");
     }
 
     closeTransactionModal();
@@ -671,6 +717,9 @@ export default function Home() {
               <p className="mt-2 text-sm text-slate-300">
                 Organize salário, gastos, parcelados e contas fixas do mês.
               </p>
+              <div className="mt-3 inline-flex rounded-full px-3 py-1 text-xs font-medium ring-1 ring-white/20 {supabaseStatus === "connected" ? "bg-emerald-500/15 text-emerald-200" : supabaseStatus === "error" ? "bg-rose-500/15 text-rose-200" : "bg-white/10 text-slate-200"}">
+                Banco online: {supabaseStatus === "connected" ? "conectado" : supabaseStatus === "error" ? "com erro" : "verificando..."}
+              </div>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-[minmax(180px,220px)_1fr]">
