@@ -52,6 +52,20 @@ type SalaryByMonth = Record<string, number>;
 type ModalMode = "create" | "edit";
 type SupabaseStatus = "checking" | "connected" | "error";
 
+type SupabaseTransactionRow = {
+  id: string;
+  date: string | null;
+  description: string | null;
+  category: string | null;
+  amount: number | string | null;
+  payment_method: string | null;
+  status: string | null;
+  type: string | null;
+  year: number | null;
+  month: number | null;
+  created_at?: string | null;
+};
+
 const STORAGE_KEYS = {
   transactions: "controle-financeiro-transactions",
   installments: "controle-financeiro-installments",
@@ -135,6 +149,41 @@ function getDateForSelectedMonth(selectedMonth: string, day: number) {
 
 function parseMoney(input: string) {
   return Number(input.replace(",", "."));
+}
+
+function normalizeTransactionStatus(value: string | null | undefined): StatusType {
+  return value === "pendente" ? "pendente" : "pago";
+}
+
+function rowToTransaction(row: SupabaseTransactionRow): Transaction {
+  const date = row.date || `${row.year ?? new Date().getFullYear()}-${String(row.month ?? new Date().getMonth() + 1).padStart(2, "0")}-01`;
+
+  return {
+    id: row.id,
+    date,
+    description: row.description || "",
+    category: row.category || "Outros",
+    amount: Number(row.amount || 0),
+    paymentMethod: row.payment_method || "Pix",
+    status: normalizeTransactionStatus(row.status),
+  };
+}
+
+function transactionToSupabasePayload(transaction: Transaction) {
+  const [year, month] = transaction.date.slice(0, 7).split("-").map(Number);
+
+  return {
+    id: transaction.id,
+    date: transaction.date,
+    description: transaction.description,
+    category: transaction.category,
+    amount: transaction.amount,
+    payment_method: transaction.paymentMethod,
+    status: transaction.status,
+    type: transaction.status === "pago" ? "saida" : "saida_pendente",
+    year,
+    month,
+  };
 }
 
 function Card({ label, value, color = "text-slate-900" }: { label: string; value: string; color?: string }) {
@@ -278,16 +327,27 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    async function checkSupabaseConnection() {
+    async function loadTransactionsFromSupabase() {
       try {
-        const { error } = await supabase.from("transactions").select("id").limit(1);
-        setSupabaseStatus(error ? "error" : "connected");
-      } catch {
+        const { data, error } = await supabase
+          .from("transactions")
+          .select("id, date, description, category, amount, payment_method, status, type, year, month, created_at")
+          .order("date", { ascending: false })
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+
+        const normalized = (data || []).map((row) => rowToTransaction(row as SupabaseTransactionRow));
+        setTransactions(normalized);
+        localStorage.setItem(STORAGE_KEYS.transactions, JSON.stringify(normalized));
+        setSupabaseStatus("connected");
+      } catch (error) {
+        console.error("Erro ao carregar lançamentos do Supabase:", error);
         setSupabaseStatus("error");
       }
     }
 
-    checkSupabaseConnection();
+    loadTransactionsFromSupabase();
   }, []);
 
   useEffect(() => {
@@ -391,17 +451,17 @@ export default function Home() {
   const projectedBalance = currentSalary - totalPaid - totalPending - totalInstallmentsMonth;
 
   async function saveTransactionToSupabase(transaction: Transaction) {
-    const [year, month] = transaction.date.slice(0, 7).split("-").map(Number);
+    const payload = transactionToSupabasePayload(transaction);
 
-    const { error } = await supabase.from("transactions").insert([
-      {
-        description: transaction.description,
-        amount: transaction.amount,
-        type: transaction.status === "pago" ? "saida" : "saida_pendente",
-        year,
-        month,
-      },
-    ]);
+    const { error } = await supabase.from("transactions").upsert([payload]);
+
+    if (error) {
+      throw error;
+    }
+  }
+
+  async function deleteTransactionFromSupabase(id: string) {
+    const { error } = await supabase.from("transactions").delete().eq("id", id);
 
     if (error) {
       throw error;
@@ -524,31 +584,8 @@ export default function Home() {
       return;
     }
 
-    if (transactionMode === "edit" && editingTransactionId) {
-      setTransactions((prev) =>
-        prev
-          .map((item) =>
-            item.id === editingTransactionId
-              ? {
-                  ...item,
-                  date,
-                  description: description.trim(),
-                  category,
-                  amount: parsedAmount,
-                  paymentMethod,
-                  status,
-                }
-              : item
-          )
-          .sort((a, b) => b.date.localeCompare(a.date))
-      );
-
-      closeTransactionModal();
-      return;
-    }
-
-    const newTransaction: Transaction = {
-      id: crypto.randomUUID(),
+    const payload: Transaction = {
+      id: editingTransactionId || crypto.randomUUID(),
       date,
       description: description.trim(),
       category,
@@ -557,18 +594,23 @@ export default function Home() {
       status,
     };
 
-    setTransactions((prev) => [newTransaction, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
-
     try {
-      await saveTransactionToSupabase(newTransaction);
+      await saveTransactionToSupabase(payload);
+      setTransactions((prev) => {
+        const exists = prev.some((item) => item.id === payload.id);
+        const updated = exists
+          ? prev.map((item) => (item.id === payload.id ? payload : item))
+          : [payload, ...prev];
+
+        return updated.sort((a, b) => b.date.localeCompare(a.date));
+      });
       setSupabaseStatus("connected");
+      closeTransactionModal();
     } catch (error) {
       console.error("Erro ao salvar no Supabase:", error);
       setSupabaseStatus("error");
-      alert("O lançamento foi salvo localmente, mas falhou ao enviar para o banco online.");
+      alert("Falhou ao salvar no banco online. Verifique se a tabela transactions tem as colunas novas do sistema.");
     }
-
-    closeTransactionModal();
   }
 
   function handleSubmitInstallment(e: React.FormEvent<HTMLFormElement>) {
@@ -657,9 +699,18 @@ export default function Home() {
     closeFixedBillModal();
   }
 
-  function handleDeleteTransaction(id: string) {
+  async function handleDeleteTransaction(id: string) {
     if (!window.confirm("Deseja excluir este lançamento?")) return;
-    setTransactions((prev) => prev.filter((item) => item.id !== id));
+
+    try {
+      await deleteTransactionFromSupabase(id);
+      setTransactions((prev) => prev.filter((item) => item.id !== id));
+      setSupabaseStatus("connected");
+    } catch (error) {
+      console.error("Erro ao excluir no Supabase:", error);
+      setSupabaseStatus("error");
+      alert("Falhou ao excluir no banco online.");
+    }
   }
 
   function handleDeleteInstallment(id: string) {
@@ -726,7 +777,7 @@ export default function Home() {
                       : "bg-white/10 text-slate-200"
                 }`}
               >
-                Banco online: {supabaseStatus === "connected" ? "conectado" : supabaseStatus === "error" ? "com erro" : "verificando..."}
+                Banco online (lançamentos): {supabaseStatus === "connected" ? "conectado" : supabaseStatus === "error" ? "com erro" : "verificando..."}
               </div>
             </div>
 
