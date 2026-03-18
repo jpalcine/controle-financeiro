@@ -760,7 +760,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900">
       <div className="mx-auto max-w-7xl px-4 py-6 md:px-6 md:py-8">
-        <section className="mb-6 rounded-3xl bg-gradient-to-r from-slate-900 to-slate-700 p-6 text-white shadow-lg">
+        <section className="mb-6 rounded-[28px] bg-gradient-to-r from-slate-900 to-slate-700 p-4 text-white shadow-lg md:p-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="text-sm text-slate-300">Seu painel financeiro</p>
@@ -789,10 +789,25 @@ export default function Home() {
                 </select>
               </div>
 
-              <div className="flex flex-wrap gap-3 sm:justify-end">
-                <button onClick={openCreateTransaction} className="rounded-2xl bg-white px-5 py-3 font-semibold text-slate-900 transition hover:scale-[1.02]">+ Gasto</button>
-                <button onClick={openCreateInstallment} className="rounded-2xl bg-white/10 px-5 py-3 font-semibold text-white ring-1 ring-white/20 transition hover:bg-white/15">+ Parcelado</button>
-                <button onClick={openCreateFixedBill} className="rounded-2xl bg-white/10 px-5 py-3 font-semibold text-white ring-1 ring-white/20 transition hover:bg-white/15">+ Conta fixa</button>
+              <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-3 sm:justify-end">
+                <button
+                  onClick={openCreateTransaction}
+                  className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:scale-[1.02]"
+                >
+                  + Gasto
+                </button>
+                <button
+                  onClick={openCreateInstallment}
+                  className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-semibold text-white ring-1 ring-white/20 transition hover:bg-white/15"
+                >
+                  + Parcelado
+                </button>
+                <button
+                  onClick={openCreateFixedBill}
+                  className="rounded-2xl bg-white/10 px-4 py-3 text-sm font-semibold text-white ring-1 ring-white/20 transition hover:bg-white/15"
+                >
+                  + Conta fixa
+                </button>
               </div>
             </div>
           </div>
@@ -942,87 +957,348 @@ export default function Home() {
       </div>
 
       {showTransactionForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-2xl rounded-3xl bg-white p-5 shadow-2xl">
-            <div className="mb-5 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900">{transactionMode === "edit" ? "Editar lançamento" : "Novo lançamento"}</h2>
-                <p className="text-sm text-slate-500">Preencha os dados do gasto do mês</p>
+        <div className="fixed inset-0 z-50 bg-black/50">
+          <div className="absolute inset-x-0 bottom-0 top-10 overflow-hidden rounded-t-[28px] bg-white shadow-2xl md:inset-auto md:left-1/2 md:top-1/2 md:w-full md:max-w-2xl md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-3xl">
+            <form onSubmit={handleSubmitTransaction} className="flex h-full flex-col">
+              <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-4 md:px-6">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 md:text-2xl">
+                    {transactionMode === "edit" ? "Editar lançamento" : "Novo lançamento"}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">Preencha os dados do gasto do mês.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeTransactionModal}
+                  className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
+                >
+                  Fechar
+                </button>
               </div>
-              <button onClick={closeTransactionModal} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Fechar</button>
-            </div>
-            <form onSubmit={handleSubmitTransaction} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Data</label>
-                <input type="date" min={`${currentMonth}-01`} value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" />
+
+              <div className="flex-1 overflow-y-auto px-4 py-4 md:px-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Data</label>
+                    <input
+                      type="date"
+                      min={`${currentMonth}-01`}
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] outline-none transition focus:border-slate-900 focus:bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Valor</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="0,00"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] outline-none transition focus:border-slate-900 focus:bg-white"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Descrição</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Mercado, gasolina, internet..."
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] outline-none transition focus:border-slate-900 focus:bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Categoria</label>
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] outline-none transition focus:border-slate-900 focus:bg-white"
+                    >
+                      {categorias.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Forma de pagamento</label>
+                    <select
+                      value={paymentMethod}
+                      onChange={(e) => setPaymentMethod(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] outline-none transition focus:border-slate-900 focus:bg-white"
+                    >
+                      {formasPagamento.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Valor</label>
-                <input type="number" step="0.01" placeholder="0,00" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" />
-              </div>
-              <div className="md:col-span-2">
-                <label className="mb-1 block text-sm font-medium text-slate-700">Descrição</label>
-                <input type="text" placeholder="Ex: Mercado, gasolina, internet..." value={description} onChange={(e) => setDescription(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Categoria</label>
-                <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900">{categorias.map((item) => <option key={item} value={item}>{item}</option>)}</select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Forma de pagamento</label>
-                <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900">{formasPagamento.map((item) => <option key={item} value={item}>{item}</option>)}</select>
-              </div>
-              <div className="flex items-end gap-3 md:col-span-2">
-                <button type="submit" className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800">{transactionMode === "edit" ? "Salvar alterações" : "Salvar gasto"}</button>
-                <button type="button" onClick={resetTransactionForm} className="rounded-2xl bg-slate-100 px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-200">Limpar</button>
+
+              <div className="sticky bottom-0 border-t border-slate-200 bg-white px-4 py-4 md:px-6">
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={resetTransactionForm}
+                    className="rounded-2xl bg-slate-100 px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-200"
+                  >
+                    Limpar
+                  </button>
+                  <button
+                    type="submit"
+                    className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    {transactionMode === "edit" ? "Salvar alterações" : "Salvar gasto"}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {showInstallmentForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-2xl rounded-3xl bg-white p-5 shadow-2xl">
-            <div className="mb-5 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900">{installmentMode === "edit" ? "Editar compra parcelada" : "Nova compra parcelada"}</h2>
-                <p className="text-sm text-slate-500">Cadastre uma vez e o sistema distribui as parcelas pelos meses.</p>
+{showInstallmentForm && (
+        <div className="fixed inset-0 z-50 bg-black/50">
+          <div className="absolute inset-x-0 bottom-0 top-10 overflow-hidden rounded-t-[28px] bg-white shadow-2xl md:inset-auto md:left-1/2 md:top-1/2 md:w-full md:max-w-2xl md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-3xl">
+            <form onSubmit={handleSubmitInstallment} className="flex h-full flex-col">
+              <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-4 md:px-6">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 md:text-2xl">
+                    {installmentMode === "edit" ? "Editar compra parcelada" : "Nova compra parcelada"}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Cadastre uma vez e o sistema distribui as parcelas pelos meses.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeInstallmentModal}
+                  className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
+                >
+                  Fechar
+                </button>
               </div>
-              <button onClick={closeInstallmentModal} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Fechar</button>
-            </div>
-            <form onSubmit={handleSubmitInstallment} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="md:col-span-2"><label className="mb-1 block text-sm font-medium text-slate-700">Descrição</label><input type="text" placeholder="Ex: Celular, geladeira, seguro..." value={installmentDescription} onChange={(e) => setInstallmentDescription(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" /></div>
-              <div><label className="mb-1 block text-sm font-medium text-slate-700">Valor total</label><input type="number" step="0.01" placeholder="0,00" value={installmentTotalAmount} onChange={(e) => setInstallmentTotalAmount(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" /></div>
-              <div><label className="mb-1 block text-sm font-medium text-slate-700">Quantidade de parcelas</label><input type="number" min="2" placeholder="Ex: 10" value={installmentCount} onChange={(e) => setInstallmentCount(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" /></div>
-              <div><label className="mb-1 block text-sm font-medium text-slate-700">Mês da primeira parcela</label><input type="month" min={currentMonth} value={installmentStartMonth} onChange={(e) => setInstallmentStartMonth(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" /></div>
-              <div><label className="mb-1 block text-sm font-medium text-slate-700">Categoria</label><select value={installmentCategory} onChange={(e) => setInstallmentCategory(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900">{categorias.map((item) => <option key={item} value={item}>{item}</option>)}</select></div>
-              <div className="md:col-span-2"><label className="mb-1 block text-sm font-medium text-slate-700">Observação</label><input type="text" placeholder="Opcional" value={installmentNotes} onChange={(e) => setInstallmentNotes(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" /></div>
-              <div className="flex items-end gap-3 md:col-span-2"><button type="submit" className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800">{installmentMode === "edit" ? "Salvar alterações" : "Salvar parcelado"}</button><button type="button" onClick={resetInstallmentForm} className="rounded-2xl bg-slate-100 px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-200">Limpar</button></div>
+
+              <div className="flex-1 overflow-y-auto px-4 py-4 md:px-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="md:col-span-2">
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Descrição</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Celular, geladeira, seguro..."
+                      value={installmentDescription}
+                      onChange={(e) => setInstallmentDescription(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] outline-none transition focus:border-slate-900 focus:bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Valor total</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="0,00"
+                      value={installmentTotalAmount}
+                      onChange={(e) => setInstallmentTotalAmount(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] outline-none transition focus:border-slate-900 focus:bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Quantidade de parcelas</label>
+                    <input
+                      type="number"
+                      min="2"
+                      placeholder="Ex: 10"
+                      value={installmentCount}
+                      onChange={(e) => setInstallmentCount(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] outline-none transition focus:border-slate-900 focus:bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Mês da primeira parcela</label>
+                    <input
+                      type="month"
+                      min={currentMonth}
+                      value={installmentStartMonth}
+                      onChange={(e) => setInstallmentStartMonth(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] outline-none transition focus:border-slate-900 focus:bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Categoria</label>
+                    <select
+                      value={installmentCategory}
+                      onChange={(e) => setInstallmentCategory(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] outline-none transition focus:border-slate-900 focus:bg-white"
+                    >
+                      {categorias.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Observação</label>
+                    <input
+                      type="text"
+                      placeholder="Opcional"
+                      value={installmentNotes}
+                      onChange={(e) => setInstallmentNotes(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] outline-none transition focus:border-slate-900 focus:bg-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="sticky bottom-0 border-t border-slate-200 bg-white px-4 py-4 md:px-6">
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={resetInstallmentForm}
+                    className="rounded-2xl bg-slate-100 px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-200"
+                  >
+                    Limpar
+                  </button>
+                  <button
+                    type="submit"
+                    className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    {installmentMode === "edit" ? "Salvar alterações" : "Salvar parcelado"}
+                  </button>
+                </div>
+              </div>
             </form>
           </div>
         </div>
       )}
 
-      {showFixedBillForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-2xl rounded-3xl bg-white p-5 shadow-2xl">
-            <div className="mb-5 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900">{fixedBillMode === "edit" ? "Editar conta fixa" : "Nova conta fixa"}</h2>
-                <p className="text-sm text-slate-500">Ela será exibida automaticamente em todo mês futuro.</p>
+{showFixedBillForm && (
+        <div className="fixed inset-0 z-50 bg-black/50">
+          <div className="absolute inset-x-0 bottom-0 top-10 overflow-hidden rounded-t-[28px] bg-white shadow-2xl md:inset-auto md:left-1/2 md:top-1/2 md:w-full md:max-w-2xl md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-3xl">
+            <form onSubmit={handleSubmitFixedBill} className="flex h-full flex-col">
+              <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-4 md:px-6">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 md:text-2xl">
+                    {fixedBillMode === "edit" ? "Editar conta fixa" : "Nova conta fixa"}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">Ela será exibida automaticamente em todo mês futuro.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeFixedBillModal}
+                  className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
+                >
+                  Fechar
+                </button>
               </div>
-              <button onClick={closeFixedBillModal} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Fechar</button>
-            </div>
-            <form onSubmit={handleSubmitFixedBill} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="md:col-span-2"><label className="mb-1 block text-sm font-medium text-slate-700">Descrição</label><input type="text" placeholder="Ex: Aluguel, internet, academia..." value={fixedBillDescription} onChange={(e) => setFixedBillDescription(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" /></div>
-              <div><label className="mb-1 block text-sm font-medium text-slate-700">Valor</label><input type="number" step="0.01" placeholder="0,00" value={fixedBillAmount} onChange={(e) => setFixedBillAmount(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" /></div>
-              <div><label className="mb-1 block text-sm font-medium text-slate-700">Dia do mês</label><input type="number" min="1" max="31" value={fixedBillDay} onChange={(e) => setFixedBillDay(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" /></div>
-              <div><label className="mb-1 block text-sm font-medium text-slate-700">Mês de início</label><input type="month" min={currentMonth} value={fixedBillStartMonth} onChange={(e) => setFixedBillStartMonth(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" /></div>
-              <div><label className="mb-1 block text-sm font-medium text-slate-700">Categoria</label><select value={fixedBillCategory} onChange={(e) => setFixedBillCategory(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900">{categorias.map((item) => <option key={item} value={item}>{item}</option>)}</select></div>
-              <div><label className="mb-1 block text-sm font-medium text-slate-700">Forma de pagamento</label><select value={fixedBillPaymentMethod} onChange={(e) => setFixedBillPaymentMethod(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900">{formasPagamento.map((item) => <option key={item} value={item}>{item}</option>)}</select></div>
-              <div className="md:col-span-2"><label className="mb-1 block text-sm font-medium text-slate-700">Observação</label><input type="text" placeholder="Opcional" value={fixedBillNotes} onChange={(e) => setFixedBillNotes(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" /></div>
-              <div className="flex items-end gap-3 md:col-span-2"><button type="submit" className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800">{fixedBillMode === "edit" ? "Salvar alterações" : "Salvar conta fixa"}</button><button type="button" onClick={resetFixedBillForm} className="rounded-2xl bg-slate-100 px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-200">Limpar</button></div>
+
+              <div className="flex-1 overflow-y-auto px-4 py-4 md:px-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="md:col-span-2">
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Descrição</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Aluguel, internet, academia..."
+                      value={fixedBillDescription}
+                      onChange={(e) => setFixedBillDescription(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] outline-none transition focus:border-slate-900 focus:bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Valor</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="0,00"
+                      value={fixedBillAmount}
+                      onChange={(e) => setFixedBillAmount(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] outline-none transition focus:border-slate-900 focus:bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Dia do mês</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={fixedBillDay}
+                      onChange={(e) => setFixedBillDay(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] outline-none transition focus:border-slate-900 focus:bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Mês de início</label>
+                    <input
+                      type="month"
+                      min={currentMonth}
+                      value={fixedBillStartMonth}
+                      onChange={(e) => setFixedBillStartMonth(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] outline-none transition focus:border-slate-900 focus:bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Categoria</label>
+                    <select
+                      value={fixedBillCategory}
+                      onChange={(e) => setFixedBillCategory(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] outline-none transition focus:border-slate-900 focus:bg-white"
+                    >
+                      {categorias.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Forma de pagamento</label>
+                    <select
+                      value={fixedBillPaymentMethod}
+                      onChange={(e) => setFixedBillPaymentMethod(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] outline-none transition focus:border-slate-900 focus:bg-white"
+                    >
+                      {formasPagamento.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="mb-1.5 block text-sm font-medium text-slate-700">Observação</label>
+                    <input
+                      type="text"
+                      placeholder="Opcional"
+                      value={fixedBillNotes}
+                      onChange={(e) => setFixedBillNotes(e.target.value)}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-[15px] outline-none transition focus:border-slate-900 focus:bg-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="sticky bottom-0 border-t border-slate-200 bg-white px-4 py-4 md:px-6">
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={resetFixedBillForm}
+                    className="rounded-2xl bg-slate-100 px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-200"
+                  >
+                    Limpar
+                  </button>
+                  <button
+                    type="submit"
+                    className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    {fixedBillMode === "edit" ? "Salvar alterações" : "Salvar conta fixa"}
+                  </button>
+                </div>
+              </div>
             </form>
           </div>
         </div>
