@@ -1,10 +1,8 @@
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-
-type StatusType = "pago" | "pendente";
-type FixedBillAction = StatusType | "ignorado";
 
 type Transaction = {
   id: string;
@@ -13,7 +11,6 @@ type Transaction = {
   category: string;
   amount: number;
   paymentMethod: string;
-  status: StatusType;
 };
 
 type InstallmentPurchase = {
@@ -35,44 +32,12 @@ type FixedBill = {
   paymentMethod: string;
   dayOfMonth: number;
   startMonth: string;
-  defaultStatus: StatusType;
   active: boolean;
   notes?: string;
 };
 
-type FixedBillMonthOverride = {
-  id: string;
-  fixedBillId: string;
-  month: string;
-  action: FixedBillAction;
-};
-
 type SalaryByMonth = Record<string, number>;
-
 type ModalMode = "create" | "edit";
-type SupabaseStatus = "checking" | "connected" | "error";
-
-type SupabaseTransactionRow = {
-  id: string;
-  date: string | null;
-  description: string | null;
-  category: string | null;
-  amount: number | string | null;
-  payment_method: string | null;
-  status: string | null;
-  type: string | null;
-  year: number | null;
-  month: number | null;
-  created_at?: string | null;
-};
-
-const STORAGE_KEYS = {
-  transactions: "controle-financeiro-transactions",
-  installments: "controle-financeiro-installments",
-  salaries: "controle-financeiro-salaries",
-  fixedBills: "controle-financeiro-fixed-bills",
-  fixedBillsOverrides: "controle-financeiro-fixed-bills-overrides",
-};
 
 const categorias = [
   "Casa",
@@ -124,9 +89,7 @@ function getMonthOptionsFromCurrent(totalMonths = 24) {
   const options: string[] = [];
   for (let i = 0; i < totalMonths; i += 1) {
     const date = new Date(base.getFullYear(), base.getMonth() + i, 1);
-    options.push(
-      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
-    );
+    options.push(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`);
   }
   return options;
 }
@@ -141,52 +104,19 @@ function isMonthBeforeCurrent(month: string) {
   return month < getCurrentMonth();
 }
 
-function getDateForSelectedMonth(selectedMonth: string, day: number) {
-  const [year, month] = selectedMonth.split("-").map(Number);
-  const safeDay = Math.min(Math.max(day, 1), 28);
-  return `${year}-${String(month).padStart(2, "0")}-${String(safeDay).padStart(2, "0")}`;
-}
-
 function parseMoney(input: string) {
   return Number(input.replace(",", "."));
 }
 
-function normalizeTransactionStatus(value: string | null | undefined): StatusType {
-  return value === "pendente" ? "pendente" : "pago";
-}
-
-function rowToTransaction(row: SupabaseTransactionRow): Transaction {
-  const date = row.date || `${row.year ?? new Date().getFullYear()}-${String(row.month ?? new Date().getMonth() + 1).padStart(2, "0")}-01`;
-
-  return {
-    id: row.id,
-    date,
-    description: row.description || "",
-    category: row.category || "Outros",
-    amount: Number(row.amount || 0),
-    paymentMethod: row.payment_method || "Pix",
-    status: normalizeTransactionStatus(row.status),
-  };
-}
-
-function transactionToSupabasePayload(transaction: Transaction) {
-  const [year, month] = transaction.date.slice(0, 7).split("-").map(Number);
-
-  return {
-    id: transaction.id,
-    date: transaction.date,
-    description: transaction.description,
-    category: transaction.category,
-    amount: transaction.amount,
-    payment_method: transaction.paymentMethod,
-    status: transaction.status,
-    type: transaction.status === "pago" ? "saida" : "saida_pendente",
-    year,
-    month,
-  };
-}
-
-function Card({ label, value, color = "text-slate-900" }: { label: string; value: string; color?: string }) {
+function Card({
+  label,
+  value,
+  color = "text-slate-900",
+}: {
+  label: string;
+  value: string;
+  color?: string;
+}) {
   return (
     <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
       <p className="text-sm text-slate-500">{label}</p>
@@ -235,15 +165,16 @@ function SectionHeader({
 export default function Home() {
   const currentMonth = getCurrentMonth();
   const monthOptions = useMemo(() => getMonthOptionsFromCurrent(24), []);
-
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [installments, setInstallments] = useState<InstallmentPurchase[]>([]);
   const [fixedBills, setFixedBills] = useState<FixedBill[]>([]);
-  const [fixedBillOverrides, setFixedBillOverrides] = useState<FixedBillMonthOverride[]>([]);
   const [salaryByMonth, setSalaryByMonth] = useState<SalaryByMonth>({});
-  const [supabaseStatus, setSupabaseStatus] = useState<SupabaseStatus>("checking");
+
+  const [loading, setLoading] = useState(true);
+  const [syncMessage, setSyncMessage] = useState("Conectando ao banco...");
+  const [isSavingSalary, setIsSavingSalary] = useState(false);
 
   const [showTransactionForm, setShowTransactionForm] = useState(false);
   const [transactionMode, setTransactionMode] = useState<ModalMode>("create");
@@ -262,7 +193,6 @@ export default function Home() {
   const [category, setCategory] = useState("Outros");
   const [amount, setAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("Pix");
-  const [status, setStatus] = useState<StatusType>("pago");
 
   const [salaryInput, setSalaryInput] = useState("");
 
@@ -279,96 +209,87 @@ export default function Home() {
   const [fixedBillPaymentMethod, setFixedBillPaymentMethod] = useState("Pix");
   const [fixedBillDay, setFixedBillDay] = useState("10");
   const [fixedBillStartMonth, setFixedBillStartMonth] = useState(currentMonth);
-  const [fixedBillDefaultStatus, setFixedBillDefaultStatus] = useState<StatusType>("pendente");
   const [fixedBillNotes, setFixedBillNotes] = useState("");
 
   useEffect(() => {
-    const savedTransactions = localStorage.getItem(STORAGE_KEYS.transactions);
-    const savedInstallments = localStorage.getItem(STORAGE_KEYS.installments);
-    const savedSalaries = localStorage.getItem(STORAGE_KEYS.salaries);
-    const savedFixedBills = localStorage.getItem(STORAGE_KEYS.fixedBills);
-    const savedFixedBillsOverrides = localStorage.getItem(STORAGE_KEYS.fixedBillsOverrides);
-
-    if (savedTransactions) {
-      try {
-        setTransactions(JSON.parse(savedTransactions));
-      } catch {
-        localStorage.removeItem(STORAGE_KEYS.transactions);
-      }
-    }
-    if (savedInstallments) {
-      try {
-        setInstallments(JSON.parse(savedInstallments));
-      } catch {
-        localStorage.removeItem(STORAGE_KEYS.installments);
-      }
-    }
-    if (savedSalaries) {
-      try {
-        setSalaryByMonth(JSON.parse(savedSalaries));
-      } catch {
-        localStorage.removeItem(STORAGE_KEYS.salaries);
-      }
-    }
-    if (savedFixedBills) {
-      try {
-        setFixedBills(JSON.parse(savedFixedBills));
-      } catch {
-        localStorage.removeItem(STORAGE_KEYS.fixedBills);
-      }
-    }
-    if (savedFixedBillsOverrides) {
-      try {
-        setFixedBillOverrides(JSON.parse(savedFixedBillsOverrides));
-      } catch {
-        localStorage.removeItem(STORAGE_KEYS.fixedBillsOverrides);
-      }
-    }
+    loadAllData();
   }, []);
 
-  useEffect(() => {
-    async function loadTransactionsFromSupabase() {
-      try {
-        const { data, error } = await supabase
-          .from("transactions")
-          .select("id, date, description, category, amount, payment_method, status, type, year, month, created_at")
-          .order("date", { ascending: false })
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-
-        const normalized = (data || []).map((row) => rowToTransaction(row as SupabaseTransactionRow));
-        setTransactions(normalized);
-        localStorage.setItem(STORAGE_KEYS.transactions, JSON.stringify(normalized));
-        setSupabaseStatus("connected");
-      } catch (error) {
-        console.error("Erro ao carregar lançamentos do Supabase:", error);
-        setSupabaseStatus("error");
-      }
-    }
-
-    loadTransactionsFromSupabase();
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.transactions, JSON.stringify(transactions));
-  }, [transactions]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.installments, JSON.stringify(installments));
-  }, [installments]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.salaries, JSON.stringify(salaryByMonth));
-  }, [salaryByMonth]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.fixedBills, JSON.stringify(fixedBills));
-  }, [fixedBills]);
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.fixedBillsOverrides, JSON.stringify(fixedBillOverrides));
-  }, [fixedBillOverrides]);
   useEffect(() => {
     const salary = salaryByMonth[selectedMonth];
     setSalaryInput(salary ? String(salary) : "");
   }, [selectedMonth, salaryByMonth]);
+
+  async function loadAllData() {
+    setLoading(true);
+    const [transactionsRes, installmentsRes, fixedBillsRes, salariesRes] = await Promise.all([
+      supabase.from("transactions").select("*").order("date", { ascending: false }),
+      supabase.from("installments").select("*").order("start_month", { ascending: false }),
+      supabase.from("fixed_bills").select("*").order("description", { ascending: true }),
+      supabase.from("monthly_salaries").select("*").order("month", { ascending: false }),
+    ]);
+
+    const errors = [
+      transactionsRes.error,
+      installmentsRes.error,
+      fixedBillsRes.error,
+      salariesRes.error,
+    ].filter(Boolean);
+
+    if (errors.length > 0) {
+      console.error("Erro ao carregar do Supabase:", errors);
+      setSyncMessage("Erro ao carregar dados do banco.");
+      setLoading(false);
+      return;
+    }
+
+    setTransactions(
+      (transactionsRes.data || []).map((item: any) => ({
+        id: item.id,
+        date: item.date,
+        description: item.description,
+        category: item.category || "Outros",
+        amount: Number(item.amount || 0),
+        paymentMethod: item.payment_method || "Pix",
+      }))
+    );
+
+    setInstallments(
+      (installmentsRes.data || []).map((item: any) => ({
+        id: item.id,
+        description: item.description,
+        category: item.category || "Cartão",
+        totalAmount: Number(item.total_amount || 0),
+        totalInstallments: Number(item.total_installments || 0),
+        installmentAmount: Number(item.installment_amount || 0),
+        startMonth: item.start_month,
+        notes: item.notes || "",
+      }))
+    );
+
+    setFixedBills(
+      (fixedBillsRes.data || []).map((item: any) => ({
+        id: item.id,
+        description: item.description,
+        category: item.category || "Contas",
+        amount: Number(item.amount || 0),
+        paymentMethod: item.payment_method || "Pix",
+        dayOfMonth: Number(item.day_of_month || 1),
+        startMonth: item.start_month,
+        active: Boolean(item.active),
+        notes: item.notes || "",
+      }))
+    );
+
+    const salariesMap: SalaryByMonth = {};
+    (salariesRes.data || []).forEach((item: any) => {
+      salariesMap[item.month] = Number(item.amount || 0);
+    });
+    setSalaryByMonth(salariesMap);
+
+    setSyncMessage("Banco online conectado.");
+    setLoading(false);
+  }
 
   const currentSalary = salaryByMonth[selectedMonth] || 0;
 
@@ -394,24 +315,9 @@ export default function Home() {
   const monthFixedBills = useMemo(() => {
     return fixedBills
       .filter((bill) => bill.active)
-      .map((bill) => {
-        const diff = getMonthsDiff(bill.startMonth, selectedMonth);
-        if (diff < 0) return null;
-        const override = fixedBillOverrides.find(
-          (item) => item.fixedBillId === bill.id && item.month === selectedMonth
-        );
-        return {
-          ...bill,
-          action: override?.action ?? bill.defaultStatus,
-          projectedDate: getDateForSelectedMonth(selectedMonth, bill.dayOfMonth),
-        };
-      })
-      .filter(
-        (bill): bill is FixedBill & { action: FixedBillAction; projectedDate: string } =>
-          Boolean(bill)
-      )
+      .filter((bill) => getMonthsDiff(bill.startMonth, selectedMonth) >= 0)
       .sort((a, b) => a.dayOfMonth - b.dayOfMonth || a.description.localeCompare(b.description));
-  }, [fixedBills, fixedBillOverrides, selectedMonth]);
+  }, [fixedBills, selectedMonth]);
 
   const totalTransactionsMonth = useMemo(
     () => monthTransactions.reduce((acc, item) => acc + item.amount, 0),
@@ -422,51 +328,12 @@ export default function Home() {
     [monthInstallments]
   );
   const totalFixedBillsMonth = useMemo(
-    () => monthFixedBills.filter((item) => item.action !== "ignorado").reduce((acc, item) => acc + item.amount, 0),
+    () => monthFixedBills.reduce((acc, item) => acc + item.amount, 0),
     [monthFixedBills]
   );
 
-  const totalPaid = useMemo(() => {
-    const paidTransactions = monthTransactions
-      .filter((item) => item.status === "pago")
-      .reduce((acc, item) => acc + item.amount, 0);
-    const paidFixed = monthFixedBills
-      .filter((item) => item.action === "pago")
-      .reduce((acc, item) => acc + item.amount, 0);
-    return paidTransactions + paidFixed;
-  }, [monthTransactions, monthFixedBills]);
-
-  const totalPending = useMemo(() => {
-    const pendingTransactions = monthTransactions
-      .filter((item) => item.status === "pendente")
-      .reduce((acc, item) => acc + item.amount, 0);
-    const pendingFixed = monthFixedBills
-      .filter((item) => item.action === "pendente")
-      .reduce((acc, item) => acc + item.amount, 0);
-    return pendingTransactions + pendingFixed;
-  }, [monthTransactions, monthFixedBills]);
-
   const totalMonth = totalTransactionsMonth + totalInstallmentsMonth + totalFixedBillsMonth;
-  const realBalance = currentSalary - totalPaid;
-  const projectedBalance = currentSalary - totalPaid - totalPending - totalInstallmentsMonth;
-
-  async function saveTransactionToSupabase(transaction: Transaction) {
-    const payload = transactionToSupabasePayload(transaction);
-
-    const { error } = await supabase.from("transactions").upsert([payload]);
-
-    if (error) {
-      throw error;
-    }
-  }
-
-  async function deleteTransactionFromSupabase(id: string) {
-    const { error } = await supabase.from("transactions").delete().eq("id", id);
-
-    if (error) {
-      throw error;
-    }
-  }
+  const projectedBalance = currentSalary - totalMonth;
 
   function resetTransactionForm() {
     setDate(`${selectedMonth}-01`);
@@ -474,7 +341,6 @@ export default function Home() {
     setCategory("Outros");
     setAmount("");
     setPaymentMethod("Pix");
-    setStatus("pago");
     setEditingTransactionId(null);
     setTransactionMode("create");
   }
@@ -497,7 +363,6 @@ export default function Home() {
     setFixedBillPaymentMethod("Pix");
     setFixedBillDay("10");
     setFixedBillStartMonth(selectedMonth);
-    setFixedBillDefaultStatus("pendente");
     setFixedBillNotes("");
     setEditingFixedBillId(null);
     setFixedBillMode("create");
@@ -516,7 +381,6 @@ export default function Home() {
     setCategory(item.category);
     setAmount(String(item.amount));
     setPaymentMethod(item.paymentMethod);
-    setStatus(item.status);
     setShowTransactionForm(true);
   }
 
@@ -551,7 +415,6 @@ export default function Home() {
     setFixedBillPaymentMethod(item.paymentMethod);
     setFixedBillDay(String(item.dayOfMonth));
     setFixedBillStartMonth(item.startMonth);
-    setFixedBillDefaultStatus(item.defaultStatus);
     setFixedBillNotes(item.notes || "");
     setShowFixedBillForm(true);
   }
@@ -584,36 +447,66 @@ export default function Home() {
       return;
     }
 
-    const payload: Transaction = {
-      id: editingTransactionId || crypto.randomUUID(),
+    const payload = {
       date,
       description: description.trim(),
       category,
       amount: parsedAmount,
-      paymentMethod,
-      status,
+      payment_method: paymentMethod,
     };
 
-    try {
-      await saveTransactionToSupabase(payload);
-      setTransactions((prev) => {
-        const exists = prev.some((item) => item.id === payload.id);
-        const updated = exists
-          ? prev.map((item) => (item.id === payload.id ? payload : item))
-          : [payload, ...prev];
+    if (transactionMode === "edit" && editingTransactionId) {
+      const { error } = await supabase.from("transactions").update(payload).eq("id", editingTransactionId);
+      if (error) {
+        console.error(error);
+        alert("Erro ao salvar lançamento.");
+        return;
+      }
+      setTransactions((prev) =>
+        prev
+          .map((item) =>
+            item.id === editingTransactionId
+              ? {
+                  ...item,
+                  date,
+                  description: description.trim(),
+                  category,
+                  amount: parsedAmount,
+                  paymentMethod,
+                }
+              : item
+          )
+          .sort((a, b) => b.date.localeCompare(a.date))
+      );
+    } else {
+      const { data, error } = await supabase
+        .from("transactions")
+        .insert(payload)
+        .select()
+        .single();
 
-        return updated.sort((a, b) => b.date.localeCompare(a.date));
-      });
-      setSupabaseStatus("connected");
-      closeTransactionModal();
-    } catch (error) {
-      console.error("Erro ao salvar no Supabase:", error);
-      setSupabaseStatus("error");
-      alert("Falhou ao salvar no banco online. Verifique se a tabela transactions tem as colunas novas do sistema.");
+      if (error || !data) {
+        console.error(error);
+        alert("Erro ao salvar lançamento.");
+        return;
+      }
+
+      const newTransaction: Transaction = {
+        id: data.id,
+        date: data.date,
+        description: data.description,
+        category: data.category || "Outros",
+        amount: Number(data.amount || 0),
+        paymentMethod: data.payment_method || "Pix",
+      };
+
+      setTransactions((prev) => [newTransaction, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
     }
+
+    closeTransactionModal();
   }
 
-  function handleSubmitInstallment(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmitInstallment(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const parsedTotalAmount = parseMoney(installmentTotalAmount);
     const parsedInstallments = Number(installmentCount);
@@ -634,27 +527,62 @@ export default function Home() {
       return;
     }
 
-    const payload: InstallmentPurchase = {
-      id: editingInstallmentId || crypto.randomUUID(),
+    const payload = {
       description: installmentDescription.trim(),
       category: installmentCategory,
-      totalAmount: parsedTotalAmount,
-      totalInstallments: parsedInstallments,
-      installmentAmount: parsedTotalAmount / parsedInstallments,
-      startMonth: installmentStartMonth,
+      total_amount: parsedTotalAmount,
+      total_installments: parsedInstallments,
+      installment_amount: parsedTotalAmount / parsedInstallments,
+      start_month: installmentStartMonth,
       notes: installmentNotes.trim(),
     };
 
     if (installmentMode === "edit" && editingInstallmentId) {
-      setInstallments((prev) => prev.map((item) => (item.id === editingInstallmentId ? payload : item)));
+      const { error } = await supabase.from("installments").update(payload).eq("id", editingInstallmentId);
+      if (error) {
+        console.error(error);
+        alert("Erro ao salvar parcelado.");
+        return;
+      }
+
+      const mapped: InstallmentPurchase = {
+        id: editingInstallmentId,
+        description: payload.description,
+        category: payload.category,
+        totalAmount: payload.total_amount,
+        totalInstallments: payload.total_installments,
+        installmentAmount: payload.installment_amount,
+        startMonth: payload.start_month,
+        notes: payload.notes,
+      };
+
+      setInstallments((prev) => prev.map((item) => (item.id === editingInstallmentId ? mapped : item)));
     } else {
-      setInstallments((prev) => [payload, ...prev]);
+      const { data, error } = await supabase.from("installments").insert(payload).select().single();
+      if (error || !data) {
+        console.error(error);
+        alert("Erro ao salvar parcelado.");
+        return;
+      }
+
+      const mapped: InstallmentPurchase = {
+        id: data.id,
+        description: data.description,
+        category: data.category || "Cartão",
+        totalAmount: Number(data.total_amount || 0),
+        totalInstallments: Number(data.total_installments || 0),
+        installmentAmount: Number(data.installment_amount || 0),
+        startMonth: data.start_month,
+        notes: data.notes || "",
+      };
+
+      setInstallments((prev) => [mapped, ...prev]);
     }
 
     closeInstallmentModal();
   }
 
-  function handleSubmitFixedBill(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmitFixedBill(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const parsedAmount = parseMoney(fixedBillAmount);
     const parsedDay = Number(fixedBillDay);
@@ -677,23 +605,59 @@ export default function Home() {
     }
 
     const currentEditing = fixedBills.find((item) => item.id === editingFixedBillId);
-    const payload: FixedBill = {
-      id: editingFixedBillId || crypto.randomUUID(),
+    const payload = {
       description: fixedBillDescription.trim(),
       category: fixedBillCategory,
       amount: parsedAmount,
-      paymentMethod: fixedBillPaymentMethod,
-      dayOfMonth: parsedDay,
-      startMonth: fixedBillStartMonth,
-      defaultStatus: fixedBillDefaultStatus,
+      payment_method: fixedBillPaymentMethod,
+      day_of_month: parsedDay,
+      start_month: fixedBillStartMonth,
       active: currentEditing?.active ?? true,
       notes: fixedBillNotes.trim(),
     };
 
     if (fixedBillMode === "edit" && editingFixedBillId) {
-      setFixedBills((prev) => prev.map((item) => (item.id === editingFixedBillId ? payload : item)));
+      const { error } = await supabase.from("fixed_bills").update(payload).eq("id", editingFixedBillId);
+      if (error) {
+        console.error(error);
+        alert("Erro ao salvar conta fixa.");
+        return;
+      }
+
+      const mapped: FixedBill = {
+        id: editingFixedBillId,
+        description: payload.description,
+        category: payload.category,
+        amount: payload.amount,
+        paymentMethod: payload.payment_method,
+        dayOfMonth: payload.day_of_month,
+        startMonth: payload.start_month,
+        active: Boolean(payload.active),
+        notes: payload.notes,
+      };
+
+      setFixedBills((prev) => prev.map((item) => (item.id === editingFixedBillId ? mapped : item)));
     } else {
-      setFixedBills((prev) => [payload, ...prev]);
+      const { data, error } = await supabase.from("fixed_bills").insert(payload).select().single();
+      if (error || !data) {
+        console.error(error);
+        alert("Erro ao salvar conta fixa.");
+        return;
+      }
+
+      const mapped: FixedBill = {
+        id: data.id,
+        description: data.description,
+        category: data.category || "Contas",
+        amount: Number(data.amount || 0),
+        paymentMethod: data.payment_method || "Pix",
+        dayOfMonth: Number(data.day_of_month || 1),
+        startMonth: data.start_month,
+        active: Boolean(data.active),
+        notes: data.notes || "",
+      };
+
+      setFixedBills((prev) => [mapped, ...prev]);
     }
 
     closeFixedBillModal();
@@ -701,38 +665,75 @@ export default function Home() {
 
   async function handleDeleteTransaction(id: string) {
     if (!window.confirm("Deseja excluir este lançamento?")) return;
-
-    try {
-      await deleteTransactionFromSupabase(id);
-      setTransactions((prev) => prev.filter((item) => item.id !== id));
-      setSupabaseStatus("connected");
-    } catch (error) {
-      console.error("Erro ao excluir no Supabase:", error);
-      setSupabaseStatus("error");
-      alert("Falhou ao excluir no banco online.");
+    const { error } = await supabase.from("transactions").delete().eq("id", id);
+    if (error) {
+      console.error(error);
+      alert("Erro ao excluir lançamento.");
+      return;
     }
+    setTransactions((prev) => prev.filter((item) => item.id !== id));
   }
 
-  function handleDeleteInstallment(id: string) {
+  async function handleDeleteInstallment(id: string) {
     if (!window.confirm("Deseja excluir esta compra parcelada?")) return;
+    const { error } = await supabase.from("installments").delete().eq("id", id);
+    if (error) {
+      console.error(error);
+      alert("Erro ao excluir parcelado.");
+      return;
+    }
     setInstallments((prev) => prev.filter((item) => item.id !== id));
   }
 
-  function handleDeleteFixedBill(id: string) {
+  async function handleDeleteFixedBill(id: string) {
     if (!window.confirm("Deseja excluir esta conta fixa?")) return;
+    const { error } = await supabase.from("fixed_bills").delete().eq("id", id);
+    if (error) {
+      console.error(error);
+      alert("Erro ao excluir conta fixa.");
+      return;
+    }
     setFixedBills((prev) => prev.filter((item) => item.id !== id));
-    setFixedBillOverrides((prev) => prev.filter((item) => item.fixedBillId !== id));
   }
 
-  function handleToggleFixedBillActive(id: string) {
-    setFixedBills((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, active: !item.active } : item))
-    );
+  async function handleToggleFixedBillActive(id: string) {
+    const current = fixedBills.find((item) => item.id === id);
+    if (!current) return;
+
+    const nextActive = !current.active;
+    const { error } = await supabase
+      .from("fixed_bills")
+      .update({ active: nextActive })
+      .eq("id", id);
+
+    if (error) {
+      console.error(error);
+      alert("Erro ao alterar conta fixa.");
+      return;
+    }
+
+    setFixedBills((prev) => prev.map((item) => (item.id === id ? { ...item, active: nextActive } : item)));
   }
 
-  function saveSalary() {
+  async function saveSalary() {
     const parsedSalary = parseMoney(salaryInput);
+
+    if (salaryInput.trim() && (!parsedSalary || parsedSalary <= 0)) {
+      alert("Informe um salário válido para este mês.");
+      return;
+    }
+
+    setIsSavingSalary(true);
+
     if (!salaryInput.trim()) {
+      const { error } = await supabase.from("monthly_salaries").delete().eq("month", selectedMonth);
+      setIsSavingSalary(false);
+      if (error) {
+        console.error(error);
+        alert("Erro ao remover salário.");
+        return;
+      }
+
       setSalaryByMonth((prev) => {
         const updated = { ...prev };
         delete updated[selectedMonth];
@@ -740,21 +741,20 @@ export default function Home() {
       });
       return;
     }
-    if (!parsedSalary || parsedSalary <= 0) {
-      alert("Informe um salário válido para este mês.");
+
+    const { error } = await supabase
+      .from("monthly_salaries")
+      .upsert({ month: selectedMonth, amount: parsedSalary }, { onConflict: "month" });
+
+    setIsSavingSalary(false);
+
+    if (error) {
+      console.error(error);
+      alert("Erro ao salvar salário.");
       return;
     }
-    setSalaryByMonth((prev) => ({ ...prev, [selectedMonth]: parsedSalary }));
-  }
 
-  function setFixedBillMonthAction(fixedBillId: string, month: string, action: FixedBillAction) {
-    setFixedBillOverrides((prev) => {
-      const existing = prev.find((item) => item.fixedBillId === fixedBillId && item.month === month);
-      if (existing) {
-        return prev.map((item) => (item.id === existing.id ? { ...item, action } : item));
-      }
-      return [...prev, { id: crypto.randomUUID(), fixedBillId, month, action }];
-    });
+    setSalaryByMonth((prev) => ({ ...prev, [selectedMonth]: parsedSalary }));
   }
 
   return (
@@ -768,16 +768,8 @@ export default function Home() {
               <p className="mt-2 text-sm text-slate-300">
                 Organize salário, gastos, parcelados e contas fixas do mês.
               </p>
-              <div
-                className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-medium ring-1 ring-white/20 ${
-                  supabaseStatus === "connected"
-                    ? "bg-emerald-500/15 text-emerald-200"
-                    : supabaseStatus === "error"
-                      ? "bg-rose-500/15 text-rose-200"
-                      : "bg-white/10 text-slate-200"
-                }`}
-              >
-                Banco online (lançamentos): {supabaseStatus === "connected" ? "conectado" : supabaseStatus === "error" ? "com erro" : "verificando..."}
+              <div className="mt-3 inline-flex rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white ring-1 ring-white/20">
+                {loading ? "Carregando do banco..." : syncMessage}
               </div>
             </div>
 
@@ -813,23 +805,30 @@ export default function Home() {
               <h2 className="mt-1 text-2xl font-bold capitalize text-slate-900">{formatMonthLabel(selectedMonth)}</h2>
             </div>
             <div className="flex w-full flex-col gap-3 sm:flex-row lg:max-w-xl">
-              <input type="number" step="0.01" placeholder="Informe o salário do mês" value={salaryInput} onChange={(e) => setSalaryInput(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" />
-              <button onClick={saveSalary} className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800">Salvar salário</button>
+              <input
+                type="number"
+                step="0.01"
+                placeholder="Informe o salário do mês"
+                value={salaryInput}
+                onChange={(e) => setSalaryInput(e.target.value)}
+                className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900"
+              />
+              <button onClick={saveSalary} className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800">
+                {isSavingSalary ? "Salvando..." : "Salvar salário"}
+              </button>
             </div>
           </div>
         </section>
 
-        <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-7">
+        <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
           <Card label="Salário" value={formatCurrency(currentSalary)} color="text-sky-600" />
-          <Card label="Gasto do mês" value={formatCurrency(totalMonth)} color="text-rose-500" />
-          <Card label="Pago" value={formatCurrency(totalPaid)} color="text-emerald-600" />
-          <Card label="Pendente" value={formatCurrency(totalPending)} color="text-amber-500" />
+          <Card label="Gastos manuais" value={formatCurrency(totalTransactionsMonth)} color="text-rose-500" />
           <Card label="Parcelas do mês" value={formatCurrency(totalInstallmentsMonth)} color="text-violet-600" />
           <Card label="Fixas do mês" value={formatCurrency(totalFixedBillsMonth)} color="text-cyan-600" />
           <div className="rounded-3xl bg-slate-900 p-5 text-white shadow-sm ring-1 ring-slate-800">
             <p className="text-sm text-slate-300">Quanto sobrou</p>
             <h2 className="mt-3 text-3xl font-bold">{formatCurrency(projectedBalance)}</h2>
-            <p className="mt-2 text-xs text-slate-300">Saldo real: {formatCurrency(realBalance)}</p>
+            <p className="mt-2 text-xs text-slate-300">Total do mês: {formatCurrency(totalMonth)}</p>
           </div>
         </section>
 
@@ -847,7 +846,6 @@ export default function Home() {
                       <p className="mt-1 text-sm text-slate-500">{item.date} • {item.category} • {item.paymentMethod}</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className={`rounded-full px-3 py-1 text-sm font-medium ${item.status === "pago" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{item.status === "pago" ? "Pago" : "Pendente"}</span>
                       <p className="min-w-[120px] text-left text-base font-bold text-slate-900 md:text-right">{formatCurrency(item.amount)}</p>
                       <button onClick={() => openEditTransaction(item)} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Editar</button>
                       <button onClick={() => handleDeleteTransaction(item.id)} className="rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-100">Excluir</button>
@@ -895,23 +893,15 @@ export default function Home() {
               <div className="space-y-3">
                 {monthFixedBills.map((item) => (
                   <div key={item.id} className="rounded-2xl border border-slate-200 p-4 transition hover:bg-slate-50">
-                    <div className="flex flex-col gap-4">
-                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div className="min-w-0">
-                          <p className="truncate text-base font-semibold text-slate-900">{item.description}</p>
-                          <p className="mt-1 text-sm text-slate-500">Dia {item.dayOfMonth} • {item.projectedDate} • {item.category} • {item.paymentMethod}</p>
-                          <p className="mt-1 text-sm text-slate-500">Início em {formatMonthLabel(item.startMonth)}{item.notes ? ` • ${item.notes}` : ""}</p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className={`rounded-full px-3 py-1 text-sm font-medium ${item.action === "pago" ? "bg-emerald-100 text-emerald-700" : item.action === "pendente" ? "bg-amber-100 text-amber-700" : "bg-slate-200 text-slate-700"}`}>{item.action === "pago" ? "Pago" : item.action === "pendente" ? "Pendente" : "Ignorado"}</span>
-                          <p className="min-w-[120px] text-left text-base font-bold text-slate-900 md:text-right">{formatCurrency(item.amount)}</p>
-                          <button onClick={() => openEditFixedBill(item)} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Editar</button>
-                        </div>
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div className="min-w-0">
+                        <p className="truncate text-base font-semibold text-slate-900">{item.description}</p>
+                        <p className="mt-1 text-sm text-slate-500">Dia {item.dayOfMonth} • {item.category} • {item.paymentMethod}</p>
+                        <p className="mt-1 text-sm text-slate-500">Início em {formatMonthLabel(item.startMonth)}{item.notes ? ` • ${item.notes}` : ""}</p>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button onClick={() => setFixedBillMonthAction(item.id, selectedMonth, "pago")} className="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100">Marcar pago</button>
-                        <button onClick={() => setFixedBillMonthAction(item.id, selectedMonth, "pendente")} className="rounded-xl bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 transition hover:bg-amber-100">Deixar pendente</button>
-                        <button onClick={() => setFixedBillMonthAction(item.id, selectedMonth, "ignorado")} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Ignorar mês</button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="min-w-[120px] text-left text-base font-bold text-slate-900 md:text-right">{formatCurrency(item.amount)}</p>
+                        <button onClick={() => openEditFixedBill(item)} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Editar</button>
                       </div>
                     </div>
                   </div>
@@ -982,10 +972,6 @@ export default function Home() {
                 <label className="mb-1 block text-sm font-medium text-slate-700">Forma de pagamento</label>
                 <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900">{formasPagamento.map((item) => <option key={item} value={item}>{item}</option>)}</select>
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Status</label>
-                <select value={status} onChange={(e) => setStatus(e.target.value as StatusType)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900"><option value="pago">Pago</option><option value="pendente">Pendente</option></select>
-              </div>
               <div className="flex items-end gap-3 md:col-span-2">
                 <button type="submit" className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800">{transactionMode === "edit" ? "Salvar alterações" : "Salvar gasto"}</button>
                 <button type="button" onClick={resetTransactionForm} className="rounded-2xl bg-slate-100 px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-200">Limpar</button>
@@ -1035,7 +1021,6 @@ export default function Home() {
               <div><label className="mb-1 block text-sm font-medium text-slate-700">Mês de início</label><input type="month" min={currentMonth} value={fixedBillStartMonth} onChange={(e) => setFixedBillStartMonth(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" /></div>
               <div><label className="mb-1 block text-sm font-medium text-slate-700">Categoria</label><select value={fixedBillCategory} onChange={(e) => setFixedBillCategory(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900">{categorias.map((item) => <option key={item} value={item}>{item}</option>)}</select></div>
               <div><label className="mb-1 block text-sm font-medium text-slate-700">Forma de pagamento</label><select value={fixedBillPaymentMethod} onChange={(e) => setFixedBillPaymentMethod(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900">{formasPagamento.map((item) => <option key={item} value={item}>{item}</option>)}</select></div>
-              <div><label className="mb-1 block text-sm font-medium text-slate-700">Status padrão</label><select value={fixedBillDefaultStatus} onChange={(e) => setFixedBillDefaultStatus(e.target.value as StatusType)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900"><option value="pago">Pago</option><option value="pendente">Pendente</option></select></div>
               <div className="md:col-span-2"><label className="mb-1 block text-sm font-medium text-slate-700">Observação</label><input type="text" placeholder="Opcional" value={fixedBillNotes} onChange={(e) => setFixedBillNotes(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" /></div>
               <div className="flex items-end gap-3 md:col-span-2"><button type="submit" className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800">{fixedBillMode === "edit" ? "Salvar alterações" : "Salvar conta fixa"}</button><button type="button" onClick={resetFixedBillForm} className="rounded-2xl bg-slate-100 px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-200">Limpar</button></div>
             </form>
