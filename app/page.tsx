@@ -36,6 +36,8 @@ type FixedBill = {
   notes?: string;
 };
 
+type FixedBillMonthStatus = "pendente" | "pago";
+type FixedBillStatusByMonth = Record<string, FixedBillMonthStatus>;
 type SalaryByMonth = Record<string, number>;
 type ModalMode = "create" | "edit";
 
@@ -170,6 +172,7 @@ export default function Home() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [installments, setInstallments] = useState<InstallmentPurchase[]>([]);
   const [fixedBills, setFixedBills] = useState<FixedBill[]>([]);
+  const [fixedBillStatusByMonth, setFixedBillStatusByMonth] = useState<FixedBillStatusByMonth>({});
   const [salaryByMonth, setSalaryByMonth] = useState<SalaryByMonth>({});
 
   const [loading, setLoading] = useState(true);
@@ -222,10 +225,11 @@ export default function Home() {
 
   async function loadAllData() {
     setLoading(true);
-    const [transactionsRes, installmentsRes, fixedBillsRes, salariesRes] = await Promise.all([
+    const [transactionsRes, installmentsRes, fixedBillsRes, fixedBillStatusesRes, salariesRes] = await Promise.all([
       supabase.from("transactions").select("*").order("date", { ascending: false }),
       supabase.from("installments").select("*").order("start_month", { ascending: false }),
       supabase.from("fixed_bills").select("*").order("description", { ascending: true }),
+      supabase.from("fixed_bill_month_statuses").select("*"),
       supabase.from("monthly_salaries").select("*").order("month", { ascending: false }),
     ]);
 
@@ -233,6 +237,7 @@ export default function Home() {
       transactionsRes.error,
       installmentsRes.error,
       fixedBillsRes.error,
+      fixedBillStatusesRes.error,
       salariesRes.error,
     ].filter(Boolean);
 
@@ -281,6 +286,14 @@ export default function Home() {
       }))
     );
 
+    const fixedBillStatusMap: FixedBillStatusByMonth = {};
+    (fixedBillStatusesRes.data || []).forEach((item: any) => {
+      if (item.fixed_bill_id && item.month) {
+        fixedBillStatusMap[`${item.fixed_bill_id}:${item.month}`] = item.status === "pago" ? "pago" : "pendente";
+      }
+    });
+    setFixedBillStatusByMonth(fixedBillStatusMap);
+
     const salariesMap: SalaryByMonth = {};
     (salariesRes.data || []).forEach((item: any) => {
       salariesMap[item.month] = Number(item.amount || 0);
@@ -292,6 +305,10 @@ export default function Home() {
   }
 
   const currentSalary = salaryByMonth[selectedMonth] || 0;
+
+  function getFixedBillMonthStatus(billId: string, month: string) {
+    return fixedBillStatusByMonth[`${billId}:${month}`] || "pendente";
+  }
 
   const monthTransactions = useMemo(() => {
     return transactions
@@ -316,8 +333,9 @@ export default function Home() {
     return fixedBills
       .filter((bill) => bill.active)
       .filter((bill) => getMonthsDiff(bill.startMonth, selectedMonth) >= 0)
+      .map((bill) => ({ ...bill, monthStatus: getFixedBillMonthStatus(bill.id, selectedMonth) }))
       .sort((a, b) => a.dayOfMonth - b.dayOfMonth || a.description.localeCompare(b.description));
-  }, [fixedBills, selectedMonth]);
+  }, [fixedBills, selectedMonth, fixedBillStatusByMonth]);
 
   const totalTransactionsMonth = useMemo(
     () => monthTransactions.reduce((acc, item) => acc + item.amount, 0),
@@ -694,25 +712,40 @@ export default function Home() {
       return;
     }
     setFixedBills((prev) => prev.filter((item) => item.id !== id));
+    setFixedBillStatusByMonth((prev) => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach((key) => {
+        if (key.startsWith(`${id}:`)) delete updated[key];
+      });
+      return updated;
+    });
   }
 
-  async function handleToggleFixedBillActive(id: string) {
-    const current = fixedBills.find((item) => item.id === id);
-    if (!current) return;
+  async function handleToggleFixedBillMonthStatus(id: string) {
+    const currentStatus = getFixedBillMonthStatus(id, selectedMonth);
+    const nextStatus: FixedBillMonthStatus = currentStatus === "pago" ? "pendente" : "pago";
 
-    const nextActive = !current.active;
     const { error } = await supabase
-      .from("fixed_bills")
-      .update({ active: nextActive })
-      .eq("id", id);
+      .from("fixed_bill_month_statuses")
+      .upsert(
+        {
+          fixed_bill_id: id,
+          month: selectedMonth,
+          status: nextStatus,
+        },
+        { onConflict: "fixed_bill_id,month" }
+      );
 
     if (error) {
       console.error(error);
-      alert("Erro ao alterar conta fixa.");
+      alert("Erro ao alterar status da conta fixa.");
       return;
     }
 
-    setFixedBills((prev) => prev.map((item) => (item.id === id ? { ...item, active: nextActive } : item)));
+    setFixedBillStatusByMonth((prev) => ({
+      ...prev,
+      [`${id}:${selectedMonth}`]: nextStatus,
+    }));
   }
 
   async function saveSalary() {
@@ -901,7 +934,7 @@ export default function Home() {
 
         <section className="mb-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
           <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <SectionHeader title="Contas fixas do mês" subtitle={`Contas recorrentes exibidas automaticamente em ${formatMonthLabel(selectedMonth)}`} buttonLabel="Nova" onClick={openCreateFixedBill} />
+            <SectionHeader title="Contas fixas" subtitle={`Contas recorrentes de ${formatMonthLabel(selectedMonth)} com status simples`} buttonLabel="Nova" onClick={openCreateFixedBill} />
             {monthFixedBills.length === 0 ? (
               <EmptyState text="Nenhuma conta fixa ativa neste mês" />
             ) : (
@@ -915,36 +948,17 @@ export default function Home() {
                         <p className="mt-1 text-sm text-slate-500">Início em {formatMonthLabel(item.startMonth)}{item.notes ? ` • ${item.notes}` : ""}</p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-3 py-1 text-sm font-medium ${item.monthStatus === "pago" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                          {item.monthStatus === "pago" ? "Pago" : "Pendente"}
+                        </span>
                         <p className="min-w-[120px] text-left text-base font-bold text-slate-900 md:text-right">{formatCurrency(item.amount)}</p>
+                        <button
+                          onClick={() => handleToggleFixedBillMonthStatus(item.id)}
+                          className={`rounded-xl px-3 py-2 text-sm font-medium transition ${item.monthStatus === "pago" ? "bg-amber-50 text-amber-700 hover:bg-amber-100" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}
+                        >
+                          {item.monthStatus === "pago" ? "Voltar para pendente" : "Marcar como pago"}
+                        </button>
                         <button onClick={() => openEditFixedBill(item)} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Editar</button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <SectionHeader title="Cadastros de contas fixas" subtitle="Gerencie o que continua aparecendo nos próximos meses" />
-            {fixedBills.length === 0 ? (
-              <EmptyState text="Nenhuma conta fixa cadastrada" />
-            ) : (
-              <div className="space-y-3">
-                {fixedBills.map((item) => (
-                  <div key={item.id} className="rounded-2xl border border-slate-200 p-4">
-                    <div className="flex flex-col gap-3">
-                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                        <div className="min-w-0">
-                          <p className="truncate text-base font-semibold text-slate-900">{item.description}</p>
-                          <p className="mt-1 text-sm text-slate-500">{formatCurrency(item.amount)} • dia {item.dayOfMonth} • {item.category}</p>
-                          <p className="mt-1 text-sm text-slate-500">{item.active ? "Ativa" : "Inativa"} • início em {formatMonthLabel(item.startMonth)}</p>
-                        </div>
-                        <span className={`rounded-full px-3 py-1 text-sm font-medium ${item.active ? "bg-cyan-100 text-cyan-700" : "bg-slate-200 text-slate-700"}`}>{item.active ? "Ativa" : "Inativa"}</span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button onClick={() => openEditFixedBill(item)} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Editar</button>
-                        <button onClick={() => handleToggleFixedBillActive(item.id)} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">{item.active ? "Desativar" : "Ativar"}</button>
                         <button onClick={() => handleDeleteFixedBill(item.id)} className="rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-100">Excluir</button>
                       </div>
                     </div>
