@@ -136,18 +136,81 @@ function parseMoney(input: string) {
   return Number(input.replace(",", "."));
 }
 
-
 function getCommittedPercent(total: number, salary: number) {
   if (!salary || salary <= 0) return 0;
-  return Math.min((total / salary) * 100, 999);
+  return (total / salary) * 100;
 }
 
-function Card({ label, value, color = "text-slate-900" }: { label: string; value: string; color?: string }) {
+function CollapsibleCard({
+  label,
+  value,
+  color = "text-slate-900",
+  defaultOpen = false,
+}: {
+  label: string;
+  value: string;
+  color?: string;
+  defaultOpen?: boolean;
+}) {
   return (
-    <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-      <p className="text-sm text-slate-500">{label}</p>
-      <h2 className={`mt-3 text-3xl font-bold ${color}`}>{value}</h2>
-    </div>
+    <details
+      className="group rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-200"
+      open={defaultOpen}
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 select-none">
+        <p className="text-sm font-medium text-slate-700">{label}</p>
+        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500 transition group-open:bg-slate-900 group-open:text-white">
+          {defaultOpen ? "aberto" : "ver"}
+        </span>
+      </summary>
+      <h2 className={`mt-3 text-2xl font-bold md:text-3xl ${color}`}>{value}</h2>
+    </details>
+  );
+}
+
+function CollapsibleSection({
+  title,
+  subtitle,
+  buttonLabel,
+  onClick,
+  children,
+  defaultOpen = false,
+}: {
+  title: string;
+  subtitle: string;
+  buttonLabel?: string;
+  onClick?: () => void;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <details className="group rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200" open={defaultOpen}>
+      <summary className="flex cursor-pointer list-none items-start justify-between gap-3 select-none">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
+          <p className="text-sm text-slate-500">{subtitle}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {buttonLabel && onClick ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onClick();
+              }}
+              className="hidden rounded-2xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 md:block"
+            >
+              {buttonLabel}
+            </button>
+          ) : null}
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500 transition group-open:bg-slate-900 group-open:text-white">
+            abrir
+          </span>
+        </div>
+      </summary>
+      <div className="mt-4">{children}</div>
+    </details>
   );
 }
 
@@ -236,6 +299,11 @@ export default function Home() {
   const [fixedBillStartMonth, setFixedBillStartMonth] = useState(currentMonth);
   const [fixedBillDefaultStatus, setFixedBillDefaultStatus] = useState<StatusType>("pendente");
   const [fixedBillNotes, setFixedBillNotes] = useState("");
+
+
+  useEffect(() => {
+    setSelectedMonth(getCurrentMonth());
+  }, []);
 
   useEffect(() => {
     const savedTransactions = localStorage.getItem(STORAGE_KEYS.transactions);
@@ -380,7 +448,7 @@ export default function Home() {
   const totalMonth = totalTransactionsMonth + totalInstallmentsMonth + totalFixedBillsMonth;
   const realBalance = currentSalary - totalPaid;
   const projectedBalance = currentSalary - totalPaid - totalPending - totalInstallmentsMonth;
-  const committedPercent = getCommittedPercent(totalMonth, currentSalary);
+  const committedPercent = currentSalary > 0 ? (totalMonth / currentSalary) * 100 : 0;
 
   const nextMonthsForecast = useMemo(() => {
     return monthOptions.slice(0, 6).map((month) => {
@@ -754,35 +822,34 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-7">
-          <Card label="Salário" value={formatCurrency(currentSalary)} color="text-sky-600" />
-          <Card label="Gasto do mês" value={formatCurrency(totalMonth)} color="text-rose-500" />
-          <Card label="Pago" value={formatCurrency(totalPaid)} color="text-emerald-600" />
-          <Card label="Pendente" value={formatCurrency(totalPending)} color="text-amber-500" />
-          <Card label="Parcelas do mês" value={formatCurrency(totalInstallmentsMonth)} color="text-violet-600" />
-          <Card label="Fixas do mês" value={formatCurrency(totalFixedBillsMonth)} color="text-cyan-600" />
-          <div className="rounded-3xl bg-slate-900 p-5 text-white shadow-sm ring-1 ring-slate-800">
-            <p className="text-sm text-slate-300">Quanto sobrou</p>
-            <h2 className="mt-3 text-3xl font-bold">{formatCurrency(projectedBalance)}</h2>
+        <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <CollapsibleCard label="Salário" value={formatCurrency(currentSalary)} color="text-sky-600" />
+          <CollapsibleCard label="Gasto do mês" value={formatCurrency(totalMonth)} color="text-rose-500" />
+          <CollapsibleCard label="Parcelas do mês" value={formatCurrency(totalInstallmentsMonth)} color="text-violet-600" />
+          <CollapsibleCard label="Fixas do mês" value={formatCurrency(totalFixedBillsMonth)} color="text-cyan-600" />
+          <details className="group rounded-3xl bg-slate-900 p-4 text-white shadow-sm ring-1 ring-slate-800">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 select-none">
+              <p className="text-sm font-medium text-slate-200">Quanto sobrou</p>
+              <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-slate-300 transition group-open:bg-white group-open:text-slate-900">
+                ver
+              </span>
+            </summary>
+            <h2 className="mt-3 text-2xl font-bold md:text-3xl">{formatCurrency(projectedBalance)}</h2>
             <p className="mt-2 text-xs text-slate-300">Saldo real: {formatCurrency(realBalance)}</p>
-          </div>
+          </details>
         </section>
+
         <section className="mb-6 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <details className="group rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200" open>
+            <summary className="flex cursor-pointer list-none items-start justify-between gap-3 select-none">
               <div>
                 <p className="text-sm font-medium text-slate-500">Resumo automático do mês</p>
-                <h2 className="mt-1 text-2xl font-bold text-slate-900">Visão rápida de {formatMonthLabel(selectedMonth)}</h2>
-                <p className="mt-2 max-w-2xl text-sm text-slate-500">
-                  Aqui você enxerga quanto já comprometeu do salário e se o mês fecha positivo ou negativo.
-                </p>
+                <h2 className="mt-1 text-xl font-bold text-slate-900">Visão rápida de {formatMonthLabel(selectedMonth)}</h2>
               </div>
-              <div className={`rounded-2xl px-4 py-3 text-sm font-semibold ${projectedBalance >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
-                {projectedBalance >= 0 ? "Mês controlado" : "Atenção ao fechamento do mês"}
-              </div>
-            </div>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition group-open:bg-slate-900 group-open:text-white">ver</span>
+            </summary>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
               <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Disponível hoje</p>
                 <p className={`mt-2 text-2xl font-bold ${realBalance >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{formatCurrency(realBalance)}</p>
@@ -799,111 +866,133 @@ export default function Home() {
                 <p className="mt-1 text-xs text-slate-500">Tudo que o mês já tem previsto sobre o salário.</p>
               </div>
             </div>
-          </div>
+          </details>
 
-          <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <div className="flex items-start justify-between gap-3">
+          <details className="group rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200" open>
+            <summary className="flex cursor-pointer list-none items-start justify-between gap-3 select-none">
               <div>
                 <p className="text-sm font-medium text-slate-500">Previsão dos próximos meses</p>
-                <h2 className="mt-1 text-2xl font-bold text-slate-900">Visão futura</h2>
+                <h2 className="mt-1 text-xl font-bold text-slate-900">Visão futura</h2>
               </div>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">6 meses</span>
-            </div>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 transition group-open:bg-slate-900 group-open:text-white">6 meses</span>
+            </summary>
 
             <div className="mt-4 space-y-3">
               {nextMonthsForecast.map((item) => (
-                <div key={item.month} className="rounded-2xl border border-slate-200 p-4">
-                  <div className="flex items-center justify-between gap-3">
+                <details key={item.month} className="group/item rounded-2xl border border-slate-200 p-4">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
                     <div>
                       <p className="font-semibold capitalize text-slate-900">{formatMonthLabel(item.month)}</p>
-                      <p className="text-xs text-slate-500">Salário {formatCurrency(item.salary)} • Previsto {formatCurrency(item.total)}</p>
+                      <p className="text-xs text-slate-500">Toque para ver os valores</p>
                     </div>
                     <span className={`rounded-full px-3 py-1 text-xs font-semibold ${item.balance >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
                       {item.balance >= 0 ? "Sobra" : "Falta"} {formatCurrency(Math.abs(item.balance))}
                     </span>
-                  </div>
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-500">
+                  </summary>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500 sm:grid-cols-4">
+                    <div className="rounded-xl bg-slate-50 px-3 py-2">Salário<br /><span className="font-semibold text-slate-900">{formatCurrency(item.salary)}</span></div>
                     <div className="rounded-xl bg-slate-50 px-3 py-2">Gastos<br /><span className="font-semibold text-slate-900">{formatCurrency(item.transactions)}</span></div>
                     <div className="rounded-xl bg-slate-50 px-3 py-2">Parcelas<br /><span className="font-semibold text-slate-900">{formatCurrency(item.installments)}</span></div>
                     <div className="rounded-xl bg-slate-50 px-3 py-2">Fixas<br /><span className="font-semibold text-slate-900">{formatCurrency(item.fixedBills)}</span></div>
                   </div>
-                </div>
+                  <div className="mt-2 rounded-xl bg-slate-900/5 px-3 py-2 text-xs text-slate-600">Total previsto: <span className="font-semibold text-slate-900">{formatCurrency(item.total)}</span></div>
+                </details>
               ))}
             </div>
-          </div>
+          </details>
         </section>
 
         <section className="mb-6 grid gap-6 xl:grid-cols-[1.2fr_1fr]">
-          <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <SectionHeader title="Lançamentos do mês" subtitle={`Gastos cadastrados manualmente em ${formatMonthLabel(selectedMonth)}`} buttonLabel="Novo" onClick={openCreateTransaction} />
+          <CollapsibleSection title="Lançamentos do mês" subtitle={`Gastos cadastrados manualmente em ${formatMonthLabel(selectedMonth)}`} buttonLabel="Novo" onClick={openCreateTransaction}>
             {monthTransactions.length === 0 ? (
               <EmptyState text="Nenhum lançamento registrado neste mês" />
             ) : (
               <div className="space-y-3">
                 {monthTransactions.map((item) => (
-                  <div key={item.id} className="flex flex-col gap-4 rounded-2xl border border-slate-200 p-4 transition hover:bg-slate-50 md:flex-row md:items-center md:justify-between">
-                    <div className="min-w-0">
-                      <p className="truncate text-base font-semibold text-slate-900">{item.description}</p>
-                      <p className="mt-1 text-sm text-slate-500">{item.date} • {item.category} • {item.paymentMethod}</p>
+                  <details key={item.id} className="group rounded-2xl border border-slate-200 p-4 transition hover:bg-slate-50">
+                    <summary className="flex cursor-pointer list-none flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div className="min-w-0">
+                        <p className="truncate text-base font-semibold text-slate-900">{item.description}</p>
+                        <p className="mt-1 text-sm text-slate-500">{item.date} • {item.category}</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-3 py-1 text-sm font-medium ${item.status === "pago" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{item.status === "pago" ? "Pago" : "Pendente"}</span>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">ver valores</span>
+                      </div>
+                    </summary>
+                    <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                      <p className="text-sm text-slate-500">{item.paymentMethod}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="min-w-[120px] text-left text-base font-bold text-slate-900 md:text-right">{formatCurrency(item.amount)}</p>
+                        <button onClick={() => openEditTransaction(item)} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Editar</button>
+                        <button onClick={() => handleDeleteTransaction(item.id)} className="rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-100">Excluir</button>
+                      </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className={`rounded-full px-3 py-1 text-sm font-medium ${item.status === "pago" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{item.status === "pago" ? "Pago" : "Pendente"}</span>
-                      <p className="min-w-[120px] text-left text-base font-bold text-slate-900 md:text-right">{formatCurrency(item.amount)}</p>
-                      <button onClick={() => openEditTransaction(item)} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Editar</button>
-                      <button onClick={() => handleDeleteTransaction(item.id)} className="rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-100">Excluir</button>
-                    </div>
-                  </div>
+                  </details>
                 ))}
               </div>
             )}
-          </div>
+          </CollapsibleSection>
 
-          <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <SectionHeader title="Parcelas do cartão" subtitle={`Compras parceladas que caem em ${formatMonthLabel(selectedMonth)}`} buttonLabel="Novo" onClick={openCreateInstallment} />
+          <CollapsibleSection title="Parcelas do cartão" subtitle={`Compras parceladas que caem em ${formatMonthLabel(selectedMonth)}`} buttonLabel="Novo" onClick={openCreateInstallment}>
             {monthInstallments.length === 0 ? (
               <EmptyState text="Nenhuma parcela ativa neste mês" />
             ) : (
               <div className="space-y-3">
                 {monthInstallments.map((item) => (
-                  <div key={item.id} className="rounded-2xl border border-slate-200 p-4 transition hover:bg-slate-50">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <details key={item.id} className="group rounded-2xl border border-slate-200 p-4 transition hover:bg-slate-50">
+                    <summary className="flex cursor-pointer list-none flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div className="min-w-0">
                         <p className="truncate text-base font-semibold text-slate-900">{item.description}</p>
-                        <p className="mt-1 text-sm text-slate-500">{item.category} • início em {formatMonthLabel(item.startMonth)}</p>
-                        <p className="mt-1 text-sm text-slate-500">Parcela {item.currentInstallment}/{item.totalInstallments}{item.notes ? ` • ${item.notes}` : ""}</p>
+                        <p className="mt-1 text-sm text-slate-500">Parcela {item.currentInstallment}/{item.totalInstallments}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-full bg-violet-100 px-3 py-1 text-sm font-medium text-violet-700">{item.currentInstallment}/{item.totalInstallments}</span>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">ver valores</span>
+                      </div>
+                    </summary>
+                    <div className="mt-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="text-sm text-slate-500">{item.category} • início em {formatMonthLabel(item.startMonth)}</p>
+                        <p className="mt-1 text-sm text-slate-500">{item.notes || "Sem observações"}</p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-violet-100 px-3 py-1 text-sm font-medium text-violet-700">{item.currentInstallment}/{item.totalInstallments}</span>
                         <p className="min-w-[120px] text-left text-base font-bold text-slate-900 md:text-right">{formatCurrency(item.installmentAmount)}</p>
                         <button onClick={() => openEditInstallment(item)} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Editar</button>
                         <button onClick={() => handleDeleteInstallment(item.id)} className="rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-100">Excluir</button>
                       </div>
                     </div>
-                  </div>
+                  </details>
                 ))}
               </div>
             )}
-          </div>
+          </CollapsibleSection>
         </section>
-
         <section className="mb-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-          <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <SectionHeader title="Contas fixas do mês" subtitle={`Contas recorrentes exibidas automaticamente em ${formatMonthLabel(selectedMonth)}`} buttonLabel="Nova" onClick={openCreateFixedBill} />
+          <CollapsibleSection title="Contas fixas do mês" subtitle={`Contas recorrentes exibidas automaticamente em ${formatMonthLabel(selectedMonth)}`} buttonLabel="Nova" onClick={openCreateFixedBill}>
             {monthFixedBills.length === 0 ? (
               <EmptyState text="Nenhuma conta fixa ativa neste mês" />
             ) : (
               <div className="space-y-3">
                 {monthFixedBills.map((item) => (
-                  <div key={item.id} className="rounded-2xl border border-slate-200 p-4 transition hover:bg-slate-50">
-                    <div className="flex flex-col gap-4">
+                  <details key={item.id} className="group rounded-2xl border border-slate-200 p-4 transition hover:bg-slate-50">
+                    <summary className="flex cursor-pointer list-none flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div className="min-w-0">
+                        <p className="truncate text-base font-semibold text-slate-900">{item.description}</p>
+                        <p className="mt-1 text-sm text-slate-500">Dia {item.dayOfMonth} • {item.category}</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-3 py-1 text-sm font-medium ${item.action === "pago" ? "bg-emerald-100 text-emerald-700" : item.action === "pendente" ? "bg-amber-100 text-amber-700" : "bg-slate-200 text-slate-700"}`}>{item.action === "pago" ? "Pago" : item.action === "pendente" ? "Pendente" : "Ignorado"}</span>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">ver valores</span>
+                      </div>
+                    </summary>
+                    <div className="mt-4 flex flex-col gap-4">
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div className="min-w-0">
-                          <p className="truncate text-base font-semibold text-slate-900">{item.description}</p>
-                          <p className="mt-1 text-sm text-slate-500">Dia {item.dayOfMonth} • {item.projectedDate} • {item.category} • {item.paymentMethod}</p>
+                        <div>
+                          <p className="text-sm text-slate-500">{item.projectedDate} • {item.paymentMethod}</p>
                           <p className="mt-1 text-sm text-slate-500">Início em {formatMonthLabel(item.startMonth)}{item.notes ? ` • ${item.notes}` : ""}</p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className={`rounded-full px-3 py-1 text-sm font-medium ${item.action === "pago" ? "bg-emerald-100 text-emerald-700" : item.action === "pendente" ? "bg-amber-100 text-amber-700" : "bg-slate-200 text-slate-700"}`}>{item.action === "pago" ? "Pago" : item.action === "pendente" ? "Pendente" : "Ignorado"}</span>
                           <p className="min-w-[120px] text-left text-base font-bold text-slate-900 md:text-right">{formatCurrency(item.amount)}</p>
                           <button onClick={() => openEditFixedBill(item)} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Editar</button>
                         </div>
@@ -914,28 +1003,33 @@ export default function Home() {
                         <button onClick={() => setFixedBillMonthAction(item.id, selectedMonth, "ignorado")} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Ignorar mês</button>
                       </div>
                     </div>
-                  </div>
+                  </details>
                 ))}
               </div>
             )}
-          </div>
+          </CollapsibleSection>
 
-          <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <SectionHeader title="Cadastros de contas fixas" subtitle="Gerencie o que continua aparecendo nos próximos meses" />
+          <CollapsibleSection title="Cadastros de contas fixas" subtitle="Gerencie o que continua aparecendo nos próximos meses">
             {fixedBills.length === 0 ? (
               <EmptyState text="Nenhuma conta fixa cadastrada" />
             ) : (
               <div className="space-y-3">
                 {fixedBills.map((item) => (
-                  <div key={item.id} className="rounded-2xl border border-slate-200 p-4">
-                    <div className="flex flex-col gap-3">
-                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                        <div className="min-w-0">
-                          <p className="truncate text-base font-semibold text-slate-900">{item.description}</p>
-                          <p className="mt-1 text-sm text-slate-500">{formatCurrency(item.amount)} • dia {item.dayOfMonth} • {item.category}</p>
-                          <p className="mt-1 text-sm text-slate-500">{item.active ? "Ativa" : "Inativa"} • início em {formatMonthLabel(item.startMonth)}</p>
-                        </div>
+                  <details key={item.id} className="group rounded-2xl border border-slate-200 p-4">
+                    <summary className="flex cursor-pointer list-none flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div className="min-w-0">
+                        <p className="truncate text-base font-semibold text-slate-900">{item.description}</p>
+                        <p className="mt-1 text-sm text-slate-500">dia {item.dayOfMonth} • {item.category}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
                         <span className={`rounded-full px-3 py-1 text-sm font-medium ${item.active ? "bg-cyan-100 text-cyan-700" : "bg-slate-200 text-slate-700"}`}>{item.active ? "Ativa" : "Inativa"}</span>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">ver valores</span>
+                      </div>
+                    </summary>
+                    <div className="mt-4 flex flex-col gap-3">
+                      <div>
+                        <p className="text-sm text-slate-500">{formatCurrency(item.amount)} • início em {formatMonthLabel(item.startMonth)}</p>
+                        {item.notes ? <p className="mt-1 text-sm text-slate-500">{item.notes}</p> : null}
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <button onClick={() => openEditFixedBill(item)} className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-200">Editar</button>
@@ -943,11 +1037,11 @@ export default function Home() {
                         <button onClick={() => handleDeleteFixedBill(item.id)} className="rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-100">Excluir</button>
                       </div>
                     </div>
-                  </div>
+                  </details>
                 ))}
               </div>
             )}
-          </div>
+          </CollapsibleSection>
         </section>
       </div>
 
