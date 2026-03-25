@@ -59,14 +59,6 @@ const STORAGE_KEYS = {
   fixedBillsOverrides: "controle-financeiro-fixed-bills-overrides",
 };
 
-const TABLES = {
-  transactions: "transactions",
-  installments: "installments",
-  salaries: "salaries_by_month",
-  fixedBills: "fixed_bills",
-  fixedBillOverrides: "fixed_bill_month_statuses",
-} as const;
-
 const categorias = [
   "Casa",
   "Alimentação",
@@ -307,8 +299,6 @@ export default function Home() {
   const [fixedBillStartMonth, setFixedBillStartMonth] = useState(currentMonth);
   const [fixedBillDefaultStatus, setFixedBillDefaultStatus] = useState<StatusType>("pendente");
   const [fixedBillNotes, setFixedBillNotes] = useState("");
-  const [isLoadingData, setIsLoadingData] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
 
 
   useEffect(() => {
@@ -316,218 +306,62 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    const savedTransactions = localStorage.getItem(STORAGE_KEYS.transactions);
+    const savedInstallments = localStorage.getItem(STORAGE_KEYS.installments);
+    const savedSalaries = localStorage.getItem(STORAGE_KEYS.salaries);
+    const savedFixedBills = localStorage.getItem(STORAGE_KEYS.fixedBills);
+    const savedFixedBillsOverrides = localStorage.getItem(STORAGE_KEYS.fixedBillsOverrides);
 
-    async function loadData() {
-      setIsLoadingData(true);
-
-      const [transactionsResponse, installmentsResponse, salariesResponse, fixedBillsResponse, overridesResponse] = await Promise.all([
-        supabase.from(TABLES.transactions).select("*"),
-        supabase.from(TABLES.installments).select("*"),
-        supabase.from(TABLES.salaries).select("month, amount"),
-        supabase.from(TABLES.fixedBills).select("*"),
-        supabase.from(TABLES.fixedBillOverrides).select("*"),
-      ]);
-
-      const responses = [transactionsResponse, installmentsResponse, salariesResponse, fixedBillsResponse, overridesResponse];
-      const firstError = responses.find((response) => response.error)?.error;
-
-      if (firstError) {
-        console.error("Erro ao carregar dados do Supabase:", firstError);
-        alert("Não foi possível carregar os dados do Supabase. Confira se as tabelas e policies foram criadas.");
-        if (!cancelled) setIsLoadingData(false);
-        return;
-      }
-
-      const transactionsData = (transactionsResponse.data ?? []).map((item) => ({
-        id: item.id,
-        date: item.date,
-        description: item.description,
-        category: item.category,
-        amount: Number(item.amount),
-        paymentMethod: item.payment_method,
-        status: item.status as StatusType,
-      }));
-
-      const installmentsData = (installmentsResponse.data ?? []).map((item) => ({
-        id: item.id,
-        description: item.description,
-        category: item.category,
-        totalAmount: Number(item.total_amount),
-        totalInstallments: Number(item.total_installments),
-        installmentAmount: Number(item.installment_amount),
-        startMonth: item.start_month,
-        notes: item.notes ?? "",
-      }));
-
-      const fixedBillsData = (fixedBillsResponse.data ?? []).map((item) => ({
-        id: item.id,
-        description: item.description,
-        category: item.category,
-        amount: Number(item.amount),
-        paymentMethod: item.payment_method,
-        dayOfMonth: Number(item.day_of_month),
-        startMonth: item.start_month,
-        defaultStatus: item.default_status as StatusType,
-        active: Boolean(item.active),
-        notes: item.notes ?? "",
-      }));
-
-      const overridesData = (overridesResponse.data ?? []).map((item) => ({
-        id: item.id,
-        fixedBillId: item.fixed_bill_id,
-        month: item.month,
-        action: (item.action ?? item.status) as FixedBillAction,
-      }));
-
-      const salariesData = (salariesResponse.data ?? []).reduce<SalaryByMonth>((acc, item) => {
-        acc[item.month] = Number(item.amount);
-        return acc;
-      }, {});
-
-      const hasRemoteData =
-        transactionsData.length > 0 ||
-        installmentsData.length > 0 ||
-        fixedBillsData.length > 0 ||
-        overridesData.length > 0 ||
-        Object.keys(salariesData).length > 0;
-
-      if (!hasRemoteData && typeof window !== "undefined") {
-        const savedTransactions = localStorage.getItem(STORAGE_KEYS.transactions);
-        const savedInstallments = localStorage.getItem(STORAGE_KEYS.installments);
-        const savedSalaries = localStorage.getItem(STORAGE_KEYS.salaries);
-        const savedFixedBills = localStorage.getItem(STORAGE_KEYS.fixedBills);
-        const savedFixedBillsOverrides = localStorage.getItem(STORAGE_KEYS.fixedBillsOverrides);
-
-        try {
-          const localTransactions: Transaction[] = savedTransactions ? JSON.parse(savedTransactions) : [];
-          const localInstallments: InstallmentPurchase[] = savedInstallments ? JSON.parse(savedInstallments) : [];
-          const localSalaries: SalaryByMonth = savedSalaries ? JSON.parse(savedSalaries) : {};
-          const localFixedBills: FixedBill[] = savedFixedBills ? JSON.parse(savedFixedBills) : [];
-          const localOverrides: FixedBillMonthOverride[] = savedFixedBillsOverrides ? JSON.parse(savedFixedBillsOverrides) : [];
-
-          const hasLocalData =
-            localTransactions.length > 0 ||
-            localInstallments.length > 0 ||
-            localFixedBills.length > 0 ||
-            localOverrides.length > 0 ||
-            Object.keys(localSalaries).length > 0;
-
-          if (hasLocalData) {
-            const operations: Promise<unknown>[] = [];
-
-            if (localTransactions.length) {
-              operations.push(supabase.from(TABLES.transactions).upsert(localTransactions.map((item) => ({
-                id: item.id,
-                date: item.date,
-                description: item.description,
-                category: item.category,
-                amount: item.amount,
-                payment_method: item.paymentMethod,
-                status: item.status,
-              })), { onConflict: "id" }));
-            }
-
-            if (localInstallments.length) {
-              operations.push(supabase.from(TABLES.installments).upsert(localInstallments.map((item) => ({
-                id: item.id,
-                description: item.description,
-                category: item.category,
-                total_amount: item.totalAmount,
-                total_installments: item.totalInstallments,
-                installment_amount: item.installmentAmount,
-                start_month: item.startMonth,
-                notes: item.notes || null,
-              })), { onConflict: "id" }));
-            }
-
-            if (localFixedBills.length) {
-              operations.push(supabase.from(TABLES.fixedBills).upsert(localFixedBills.map((item) => ({
-                id: item.id,
-                description: item.description,
-                category: item.category,
-                amount: item.amount,
-                payment_method: item.paymentMethod,
-                day_of_month: item.dayOfMonth,
-                start_month: item.startMonth,
-                default_status: item.defaultStatus,
-                active: item.active,
-                notes: item.notes || null,
-              })), { onConflict: "id" }));
-            }
-
-            if (localOverrides.length) {
-              operations.push(supabase.from(TABLES.fixedBillOverrides).upsert(localOverrides.map((item) => ({
-                id: item.id,
-                fixed_bill_id: item.fixedBillId,
-                month: item.month,
-                action: item.action,
-              })), { onConflict: "fixed_bill_id,month" }));
-            }
-
-            const salaryEntries = Object.entries(localSalaries);
-            if (salaryEntries.length) {
-              operations.push(supabase.from(TABLES.salaries).upsert(salaryEntries.map(([month, amount]) => ({ month, amount })), { onConflict: "month" }));
-            }
-
-            const results = await Promise.all(operations);
-            const migrationError = results.find((result) => result && typeof result === "object" && "error" in result && result.error) as { error?: unknown } | undefined;
-
-            if (!migrationError) {
-              if (!cancelled) {
-                setTransactions(localTransactions);
-                setInstallments(localInstallments);
-                setSalaryByMonth(localSalaries);
-                setFixedBills(localFixedBills);
-                setFixedBillOverrides(localOverrides);
-                setIsLoadingData(false);
-              }
-              return;
-            }
-
-            console.error("Erro ao migrar dados do localStorage para o Supabase:", migrationError.error);
-            alert("Os dados locais foram encontrados, mas a migração para o Supabase falhou.");
-          }
-        } catch (error) {
-          console.error("Erro ao ler dados locais:", error);
-        }
-      }
-
-      if (!cancelled) {
-        setTransactions(transactionsData);
-        setInstallments(installmentsData);
-        setSalaryByMonth(salariesData);
-        setFixedBills(fixedBillsData);
-        setFixedBillOverrides(overridesData);
-        setIsLoadingData(false);
+    if (savedTransactions) {
+      try {
+        setTransactions(JSON.parse(savedTransactions));
+      } catch {
+        localStorage.removeItem(STORAGE_KEYS.transactions);
       }
     }
-
-    loadData();
-
-    return () => {
-      cancelled = true;
-    };
+    if (savedInstallments) {
+      try {
+        setInstallments(JSON.parse(savedInstallments));
+      } catch {
+        localStorage.removeItem(STORAGE_KEYS.installments);
+      }
+    }
+    if (savedSalaries) {
+      try {
+        setSalaryByMonth(JSON.parse(savedSalaries));
+      } catch {
+        localStorage.removeItem(STORAGE_KEYS.salaries);
+      }
+    }
+    if (savedFixedBills) {
+      try {
+        setFixedBills(JSON.parse(savedFixedBills));
+      } catch {
+        localStorage.removeItem(STORAGE_KEYS.fixedBills);
+      }
+    }
+    if (savedFixedBillsOverrides) {
+      try {
+        setFixedBillOverrides(JSON.parse(savedFixedBillsOverrides));
+      } catch {
+        localStorage.removeItem(STORAGE_KEYS.fixedBillsOverrides);
+      }
+    }
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
     localStorage.setItem(STORAGE_KEYS.transactions, JSON.stringify(transactions));
   }, [transactions]);
   useEffect(() => {
-    if (typeof window === "undefined") return;
     localStorage.setItem(STORAGE_KEYS.installments, JSON.stringify(installments));
   }, [installments]);
   useEffect(() => {
-    if (typeof window === "undefined") return;
     localStorage.setItem(STORAGE_KEYS.salaries, JSON.stringify(salaryByMonth));
   }, [salaryByMonth]);
   useEffect(() => {
-    if (typeof window === "undefined") return;
     localStorage.setItem(STORAGE_KEYS.fixedBills, JSON.stringify(fixedBills));
   }, [fixedBills]);
   useEffect(() => {
-    if (typeof window === "undefined") return;
     localStorage.setItem(STORAGE_KEYS.fixedBillsOverrides, JSON.stringify(fixedBillOverrides));
   }, [fixedBillOverrides]);
   useEffect(() => {
@@ -755,7 +589,7 @@ export default function Home() {
     setShowFixedBillForm(false);
   }
 
-  async function handleSubmitTransaction(e: React.FormEvent<HTMLFormElement>) {
+  function handleSubmitTransaction(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const parsedAmount = parseMoney(amount);
 
@@ -768,51 +602,41 @@ export default function Home() {
       return;
     }
 
-    setIsSaving(true);
-
-    const payload = {
-      id: editingTransactionId || crypto.randomUUID(),
-      date,
-      description: description.trim(),
-      category,
-      amount: parsedAmount,
-      payment_method: paymentMethod,
-      status,
-    };
-
-    const { error } = transactionMode === "edit" && editingTransactionId
-      ? await supabase.from(TABLES.transactions).update(payload).eq("id", editingTransactionId)
-      : await supabase.from(TABLES.transactions).insert(payload);
-
-    setIsSaving(false);
-
-    if (error) {
-      console.error("Erro ao salvar lançamento:", error);
-      alert("Não foi possível salvar o lançamento.");
-      return;
-    }
-
-    const mappedPayload: Transaction = {
-      id: payload.id,
-      date: payload.date,
-      description: payload.description,
-      category: payload.category,
-      amount: payload.amount,
-      paymentMethod: payload.payment_method,
-      status: payload.status as StatusType,
-    };
-
     if (transactionMode === "edit" && editingTransactionId) {
-      setTransactions((prev) => prev.map((item) => (item.id === editingTransactionId ? mappedPayload : item)).sort((a, b) => b.date.localeCompare(a.date)));
+      setTransactions((prev) =>
+        prev
+          .map((item) =>
+            item.id === editingTransactionId
+              ? {
+                  ...item,
+                  date,
+                  description: description.trim(),
+                  category,
+                  amount: parsedAmount,
+                  paymentMethod,
+                  status,
+                }
+              : item
+          )
+          .sort((a, b) => b.date.localeCompare(a.date))
+      );
     } else {
-      setTransactions((prev) => [mappedPayload, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
+      const newTransaction: Transaction = {
+        id: crypto.randomUUID(),
+        date,
+        description: description.trim(),
+        category,
+        amount: parsedAmount,
+        paymentMethod,
+        status,
+      };
+      setTransactions((prev) => [newTransaction, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
     }
 
     closeTransactionModal();
   }
 
-
-  async function handleSubmitInstallment(e: React.FormEvent<HTMLFormElement>) {
+  function handleSubmitInstallment(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const parsedTotalAmount = parseMoney(installmentTotalAmount);
     const parsedInstallments = Number(installmentCount);
@@ -833,53 +657,27 @@ export default function Home() {
       return;
     }
 
-    setIsSaving(true);
-
-    const payload = {
+    const payload: InstallmentPurchase = {
       id: editingInstallmentId || crypto.randomUUID(),
       description: installmentDescription.trim(),
       category: installmentCategory,
-      total_amount: parsedTotalAmount,
-      total_installments: parsedInstallments,
-      installment_amount: parsedTotalAmount / parsedInstallments,
-      start_month: installmentStartMonth,
-      notes: installmentNotes.trim() || null,
-    };
-
-    const { error } = installmentMode === "edit" && editingInstallmentId
-      ? await supabase.from(TABLES.installments).update(payload).eq("id", editingInstallmentId)
-      : await supabase.from(TABLES.installments).insert(payload);
-
-    setIsSaving(false);
-
-    if (error) {
-      console.error("Erro ao salvar parcelado:", error);
-      alert("Não foi possível salvar o parcelado.");
-      return;
-    }
-
-    const mappedPayload: InstallmentPurchase = {
-      id: payload.id,
-      description: payload.description,
-      category: payload.category,
-      totalAmount: payload.total_amount,
-      totalInstallments: payload.total_installments,
-      installmentAmount: payload.installment_amount,
-      startMonth: payload.start_month,
-      notes: payload.notes || "",
+      totalAmount: parsedTotalAmount,
+      totalInstallments: parsedInstallments,
+      installmentAmount: parsedTotalAmount / parsedInstallments,
+      startMonth: installmentStartMonth,
+      notes: installmentNotes.trim(),
     };
 
     if (installmentMode === "edit" && editingInstallmentId) {
-      setInstallments((prev) => prev.map((item) => (item.id === editingInstallmentId ? mappedPayload : item)));
+      setInstallments((prev) => prev.map((item) => (item.id === editingInstallmentId ? payload : item)));
     } else {
-      setInstallments((prev) => [mappedPayload, ...prev]);
+      setInstallments((prev) => [payload, ...prev]);
     }
 
     closeInstallmentModal();
   }
 
-
-  async function handleSubmitFixedBill(e: React.FormEvent<HTMLFormElement>) {
+  function handleSubmitFixedBill(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const parsedAmount = parseMoney(fixedBillAmount);
     const parsedDay = Number(fixedBillDay);
@@ -902,124 +700,53 @@ export default function Home() {
     }
 
     const currentEditing = fixedBills.find((item) => item.id === editingFixedBillId);
-
-    setIsSaving(true);
-
-    const payload = {
+    const payload: FixedBill = {
       id: editingFixedBillId || crypto.randomUUID(),
       description: fixedBillDescription.trim(),
       category: fixedBillCategory,
       amount: parsedAmount,
-      payment_method: fixedBillPaymentMethod,
-      day_of_month: parsedDay,
-      start_month: fixedBillStartMonth,
-      default_status: fixedBillDefaultStatus,
+      paymentMethod: fixedBillPaymentMethod,
+      dayOfMonth: parsedDay,
+      startMonth: fixedBillStartMonth,
+      defaultStatus: fixedBillDefaultStatus,
       active: currentEditing?.active ?? true,
-      notes: fixedBillNotes.trim() || null,
-    };
-
-    const { error } = fixedBillMode === "edit" && editingFixedBillId
-      ? await supabase.from(TABLES.fixedBills).update(payload).eq("id", editingFixedBillId)
-      : await supabase.from(TABLES.fixedBills).insert(payload);
-
-    setIsSaving(false);
-
-    if (error) {
-      console.error("Erro ao salvar conta fixa:", error);
-      alert("Não foi possível salvar a conta fixa.");
-      return;
-    }
-
-    const mappedPayload: FixedBill = {
-      id: payload.id,
-      description: payload.description,
-      category: payload.category,
-      amount: payload.amount,
-      paymentMethod: payload.payment_method,
-      dayOfMonth: payload.day_of_month,
-      startMonth: payload.start_month,
-      defaultStatus: payload.default_status as StatusType,
-      active: payload.active,
-      notes: payload.notes || "",
+      notes: fixedBillNotes.trim(),
     };
 
     if (fixedBillMode === "edit" && editingFixedBillId) {
-      setFixedBills((prev) => prev.map((item) => (item.id === editingFixedBillId ? mappedPayload : item)));
+      setFixedBills((prev) => prev.map((item) => (item.id === editingFixedBillId ? payload : item)));
     } else {
-      setFixedBills((prev) => [mappedPayload, ...prev]);
+      setFixedBills((prev) => [payload, ...prev]);
     }
 
     closeFixedBillModal();
   }
 
-
-  async function handleDeleteTransaction(id: string) {
+  function handleDeleteTransaction(id: string) {
     if (!window.confirm("Deseja excluir este lançamento?")) return;
-
-    const { error } = await supabase.from(TABLES.transactions).delete().eq("id", id);
-    if (error) {
-      console.error("Erro ao excluir lançamento:", error);
-      alert("Não foi possível excluir o lançamento.");
-      return;
-    }
-
     setTransactions((prev) => prev.filter((item) => item.id !== id));
   }
 
-
-  async function handleDeleteInstallment(id: string) {
+  function handleDeleteInstallment(id: string) {
     if (!window.confirm("Deseja excluir esta compra parcelada?")) return;
-
-    const { error } = await supabase.from(TABLES.installments).delete().eq("id", id);
-    if (error) {
-      console.error("Erro ao excluir parcelado:", error);
-      alert("Não foi possível excluir o parcelado.");
-      return;
-    }
-
     setInstallments((prev) => prev.filter((item) => item.id !== id));
   }
 
-
-  async function handleDeleteFixedBill(id: string) {
+  function handleDeleteFixedBill(id: string) {
     if (!window.confirm("Deseja excluir esta conta fixa?")) return;
-
-    const { error } = await supabase.from(TABLES.fixedBills).delete().eq("id", id);
-    if (error) {
-      console.error("Erro ao excluir conta fixa:", error);
-      alert("Não foi possível excluir a conta fixa.");
-      return;
-    }
-
     setFixedBills((prev) => prev.filter((item) => item.id !== id));
     setFixedBillOverrides((prev) => prev.filter((item) => item.fixedBillId !== id));
   }
 
-
-  async function handleToggleFixedBillActive(id: string) {
-    const currentBill = fixedBills.find((item) => item.id === id);
-    if (!currentBill) return;
-
-    const nextActive = !currentBill.active;
-    const { error } = await supabase.from(TABLES.fixedBills).update({ active: nextActive }).eq("id", id);
-    if (error) {
-      console.error("Erro ao alterar status da conta fixa:", error);
-      alert("Não foi possível atualizar a conta fixa.");
-      return;
-    }
-
-    setFixedBills((prev) => prev.map((item) => (item.id === id ? { ...item, active: nextActive } : item)));
+  function handleToggleFixedBillActive(id: string) {
+    setFixedBills((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, active: !item.active } : item))
+    );
   }
 
-
-  async function saveSalary() {
+  function saveSalary() {
+    const parsedSalary = parseMoney(salaryInput);
     if (!salaryInput.trim()) {
-      const { error } = await supabase.from(TABLES.salaries).delete().eq("month", selectedMonth);
-      if (error) {
-        console.error("Erro ao remover salário:", error);
-        alert("Não foi possível remover o salário deste mês.");
-        return;
-      }
       setSalaryByMonth((prev) => {
         const updated = { ...prev };
         delete updated[selectedMonth];
@@ -1027,55 +754,25 @@ export default function Home() {
       });
       return;
     }
-
-    const parsedSalary = parseMoney(salaryInput);
     if (!parsedSalary || parsedSalary <= 0) {
       alert("Informe um salário válido para este mês.");
       return;
     }
-
-    const { error } = await supabase.from(TABLES.salaries).upsert({ month: selectedMonth, amount: parsedSalary }, { onConflict: "month" });
-    if (error) {
-      console.error("Erro ao salvar salário:", error);
-      alert("Não foi possível salvar o salário.");
-      return;
-    }
-
     setSalaryByMonth((prev) => ({ ...prev, [selectedMonth]: parsedSalary }));
   }
 
-
-  async function setFixedBillMonthAction(fixedBillId: string, month: string, action: FixedBillAction) {
-    const existing = fixedBillOverrides.find((item) => item.fixedBillId === fixedBillId && item.month === month);
-    const payload = {
-      id: existing?.id || crypto.randomUUID(),
-      fixed_bill_id: fixedBillId,
-      month,
-      action,
-    };
-
-    const { error } = await supabase.from(TABLES.fixedBillOverrides).upsert(payload, { onConflict: "fixed_bill_id,month" });
-    if (error) {
-      console.error("Erro ao atualizar status mensal da conta fixa:", error);
-      alert("Não foi possível atualizar o status mensal da conta fixa.");
-      return;
-    }
-
+  function setFixedBillMonthAction(fixedBillId: string, month: string, action: FixedBillAction) {
     setFixedBillOverrides((prev) => {
+      const existing = prev.find((item) => item.fixedBillId === fixedBillId && item.month === month);
       if (existing) {
         return prev.map((item) => (item.id === existing.id ? { ...item, action } : item));
       }
-      return [...prev, { id: payload.id, fixedBillId, month, action }];
+      return [...prev, { id: crypto.randomUUID(), fixedBillId, month, action }];
     });
   }
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900">
-      {isLoadingData ? (
-        <div className="sticky top-0 z-40 bg-amber-50 px-4 py-3 text-center text-sm font-medium text-amber-700 ring-1 ring-amber-200">
-          Carregando dados do Supabase...
-        </div>
-      ) : null}
       <div className="mx-auto max-w-7xl px-4 py-6 md:px-6 md:py-8">
         <section className="mb-6 rounded-3xl bg-gradient-to-r from-slate-900 to-slate-700 p-6 text-white shadow-lg">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
@@ -1120,7 +817,7 @@ export default function Home() {
             </div>
             <div className="flex w-full flex-col gap-3 sm:flex-row lg:max-w-xl">
               <input type="number" step="0.01" placeholder="Informe o salário do mês" value={salaryInput} onChange={(e) => setSalaryInput(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" />
-              <button onClick={saveSalary} className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60" disabled={isSaving || isLoadingData}>{isSaving ? "Salvando..." : "Salvar salário"}</button>
+              <button onClick={saveSalary} className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800">Salvar salário</button>
             </div>
           </div>
         </section>
@@ -1384,7 +1081,7 @@ export default function Home() {
                 <select value={status} onChange={(e) => setStatus(e.target.value as StatusType)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900"><option value="pago">Pago</option><option value="pendente">Pendente</option></select>
               </div>
               <div className="flex items-end gap-3 md:col-span-2">
-                <button type="submit" className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60" disabled={isSaving || isLoadingData}>{isSaving ? "Salvando..." : transactionMode === "edit" ? "Salvar alterações" : "Salvar gasto"}</button>
+                <button type="submit" className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800">{transactionMode === "edit" ? "Salvar alterações" : "Salvar gasto"}</button>
                 <button type="button" onClick={resetTransactionForm} className="rounded-2xl bg-slate-100 px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-200">Limpar</button>
               </div>
             </form>
@@ -1409,7 +1106,7 @@ export default function Home() {
               <div><label className="mb-1 block text-sm font-medium text-slate-700">Mês da primeira parcela</label><input type="month" min={currentMonth} value={installmentStartMonth} onChange={(e) => setInstallmentStartMonth(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" /></div>
               <div><label className="mb-1 block text-sm font-medium text-slate-700">Categoria</label><select value={installmentCategory} onChange={(e) => setInstallmentCategory(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900">{categorias.map((item) => <option key={item} value={item}>{item}</option>)}</select></div>
               <div className="md:col-span-2"><label className="mb-1 block text-sm font-medium text-slate-700">Observação</label><input type="text" placeholder="Opcional" value={installmentNotes} onChange={(e) => setInstallmentNotes(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" /></div>
-              <div className="flex items-end gap-3 md:col-span-2"><button type="submit" className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60" disabled={isSaving || isLoadingData}>{isSaving ? "Salvando..." : installmentMode === "edit" ? "Salvar alterações" : "Salvar parcelado"}</button><button type="button" onClick={resetInstallmentForm} className="rounded-2xl bg-slate-100 px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-200">Limpar</button></div>
+              <div className="flex items-end gap-3 md:col-span-2"><button type="submit" className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800">{installmentMode === "edit" ? "Salvar alterações" : "Salvar parcelado"}</button><button type="button" onClick={resetInstallmentForm} className="rounded-2xl bg-slate-100 px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-200">Limpar</button></div>
             </form>
           </div>
         </div>
@@ -1434,7 +1131,7 @@ export default function Home() {
               <div><label className="mb-1 block text-sm font-medium text-slate-700">Forma de pagamento</label><select value={fixedBillPaymentMethod} onChange={(e) => setFixedBillPaymentMethod(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900">{formasPagamento.map((item) => <option key={item} value={item}>{item}</option>)}</select></div>
               <div><label className="mb-1 block text-sm font-medium text-slate-700">Status padrão</label><select value={fixedBillDefaultStatus} onChange={(e) => setFixedBillDefaultStatus(e.target.value as StatusType)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900"><option value="pago">Pago</option><option value="pendente">Pendente</option></select></div>
               <div className="md:col-span-2"><label className="mb-1 block text-sm font-medium text-slate-700">Observação</label><input type="text" placeholder="Opcional" value={fixedBillNotes} onChange={(e) => setFixedBillNotes(e.target.value)} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-900" /></div>
-              <div className="flex items-end gap-3 md:col-span-2"><button type="submit" className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60" disabled={isSaving || isLoadingData}>{isSaving ? "Salvando..." : fixedBillMode === "edit" ? "Salvar alterações" : "Salvar conta fixa"}</button><button type="button" onClick={resetFixedBillForm} className="rounded-2xl bg-slate-100 px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-200">Limpar</button></div>
+              <div className="flex items-end gap-3 md:col-span-2"><button type="submit" className="rounded-2xl bg-slate-900 px-5 py-3 font-semibold text-white transition hover:bg-slate-800">{fixedBillMode === "edit" ? "Salvar alterações" : "Salvar conta fixa"}</button><button type="button" onClick={resetFixedBillForm} className="rounded-2xl bg-slate-100 px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-200">Limpar</button></div>
             </form>
           </div>
         </div>
