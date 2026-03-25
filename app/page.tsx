@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase"
+import { supabase } from "@/lib/supabase";
 
 type StatusType = "pago" | "pendente";
 type FixedBillAction = StatusType | "ignorado";
@@ -58,6 +58,14 @@ const STORAGE_KEYS = {
   fixedBills: "controle-financeiro-fixed-bills",
   fixedBillsOverrides: "controle-financeiro-fixed-bills-overrides",
 };
+
+const TABLES = {
+  transactions: "transactions",
+  installments: "installments",
+  fixedBills: "fixed_bills",
+  fixedBillMonthStatuses: "fixed_bill_month_statuses",
+  salariesByMonth: "salaries_by_month",
+} as const;
 
 const categorias = [
   "Casa",
@@ -134,6 +142,144 @@ function getDateForSelectedMonth(selectedMonth: string, day: number) {
 
 function parseMoney(input: string) {
   return Number(input.replace(",", "."));
+}
+
+function normalizeStatus(value: string | null | undefined): StatusType {
+  return value === "pendente" ? "pendente" : "pago";
+}
+
+function normalizeFixedBillAction(value: string | null | undefined): FixedBillAction {
+  if (value === "pendente" || value === "ignorado") return value;
+  return "pago";
+}
+
+function readLocalData() {
+  const readJson = <T,>(key: string, fallback: T): T => {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? (JSON.parse(raw) as T) : fallback;
+    } catch {
+      localStorage.removeItem(key);
+      return fallback;
+    }
+  };
+
+  return {
+    transactions: readJson<Transaction[]>(STORAGE_KEYS.transactions, []),
+    installments: readJson<InstallmentPurchase[]>(STORAGE_KEYS.installments, []),
+    salaries: readJson<SalaryByMonth>(STORAGE_KEYS.salaries, {}),
+    fixedBills: readJson<FixedBill[]>(STORAGE_KEYS.fixedBills, []),
+    fixedBillOverrides: readJson<FixedBillMonthOverride[]>(STORAGE_KEYS.fixedBillsOverrides, []),
+  };
+}
+
+function transactionToRow(item: Transaction) {
+  return {
+    id: item.id,
+    date: item.date,
+    description: item.description,
+    category: item.category,
+    amount: item.amount,
+    payment_method: item.paymentMethod,
+    status: item.status,
+  };
+}
+
+function installmentToRow(item: InstallmentPurchase) {
+  return {
+    id: item.id,
+    description: item.description,
+    category: item.category,
+    total_amount: item.totalAmount,
+    total_installments: item.totalInstallments,
+    installment_amount: item.installmentAmount,
+    start_month: item.startMonth,
+    notes: item.notes || null,
+  };
+}
+
+function fixedBillToRow(item: FixedBill) {
+  return {
+    id: item.id,
+    description: item.description,
+    category: item.category,
+    amount: item.amount,
+    payment_method: item.paymentMethod,
+    day_of_month: item.dayOfMonth,
+    start_month: item.startMonth,
+    default_status: item.defaultStatus,
+    active: item.active,
+    notes: item.notes || null,
+  };
+}
+
+function fixedBillOverrideToRow(item: FixedBillMonthOverride) {
+  return {
+    id: item.id,
+    fixed_bill_id: item.fixedBillId,
+    month: item.month,
+    action: item.action,
+  };
+}
+
+function salaryEntriesToRows(salaryByMonth: SalaryByMonth) {
+  return Object.entries(salaryByMonth).map(([month, salary]) => ({ month, salary }));
+}
+
+function mapTransactionRow(row: any): Transaction {
+  return {
+    id: String(row.id),
+    date: String(row.date),
+    description: String(row.description ?? ""),
+    category: String(row.category ?? "Outros"),
+    amount: Number(row.amount ?? 0),
+    paymentMethod: String(row.payment_method ?? "Pix"),
+    status: normalizeStatus(row.status),
+  };
+}
+
+function mapInstallmentRow(row: any): InstallmentPurchase {
+  return {
+    id: String(row.id),
+    description: String(row.description ?? ""),
+    category: String(row.category ?? "Cartão"),
+    totalAmount: Number(row.total_amount ?? 0),
+    totalInstallments: Number(row.total_installments ?? 0),
+    installmentAmount: Number(row.installment_amount ?? 0),
+    startMonth: String(row.start_month),
+    notes: row.notes ? String(row.notes) : "",
+  };
+}
+
+function mapFixedBillRow(row: any): FixedBill {
+  return {
+    id: String(row.id),
+    description: String(row.description ?? ""),
+    category: String(row.category ?? "Contas"),
+    amount: Number(row.amount ?? 0),
+    paymentMethod: String(row.payment_method ?? "Pix"),
+    dayOfMonth: Number(row.day_of_month ?? 1),
+    startMonth: String(row.start_month),
+    defaultStatus: normalizeStatus(row.default_status),
+    active: Boolean(row.active),
+    notes: row.notes ? String(row.notes) : "",
+  };
+}
+
+function mapFixedBillOverrideRow(row: any): FixedBillMonthOverride {
+  return {
+    id: String(row.id),
+    fixedBillId: String(row.fixed_bill_id),
+    month: String(row.month),
+    action: normalizeFixedBillAction(row.action),
+  };
+}
+
+function mapSalaryRows(rows: any[]): SalaryByMonth {
+  return rows.reduce<SalaryByMonth>((acc, row) => {
+    acc[String(row.month)] = Number(row.salary ?? 0);
+    return acc;
+  }, {});
 }
 
 function getCommittedPercent(total: number, salary: number) {
@@ -222,35 +368,6 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
-function SectionHeader({
-  title,
-  subtitle,
-  buttonLabel,
-  onClick,
-}: {
-  title: string;
-  subtitle: string;
-  buttonLabel?: string;
-  onClick?: () => void;
-}) {
-  return (
-    <div className="mb-4 flex items-center justify-between gap-3">
-      <div>
-        <h2 className="text-xl font-semibold">{title}</h2>
-        <p className="text-sm text-slate-500">{subtitle}</p>
-      </div>
-      {buttonLabel && onClick ? (
-        <button
-          onClick={onClick}
-          className="hidden rounded-2xl bg-slate-900 px-4 py-2 font-medium text-white transition hover:bg-slate-800 md:block"
-        >
-          {buttonLabel}
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
 export default function Home() {
   const currentMonth = getCurrentMonth();
   const monthOptions = useMemo(() => getMonthOptionsFromCurrent(24), []);
@@ -300,53 +417,133 @@ export default function Home() {
   const [fixedBillDefaultStatus, setFixedBillDefaultStatus] = useState<StatusType>("pendente");
   const [fixedBillNotes, setFixedBillNotes] = useState("");
 
-
   useEffect(() => {
     setSelectedMonth(getCurrentMonth());
   }, []);
 
   useEffect(() => {
-    const savedTransactions = localStorage.getItem(STORAGE_KEYS.transactions);
-    const savedInstallments = localStorage.getItem(STORAGE_KEYS.installments);
-    const savedSalaries = localStorage.getItem(STORAGE_KEYS.salaries);
-    const savedFixedBills = localStorage.getItem(STORAGE_KEYS.fixedBills);
-    const savedFixedBillsOverrides = localStorage.getItem(STORAGE_KEYS.fixedBillsOverrides);
+    let cancelled = false;
 
-    if (savedTransactions) {
+    async function loadData() {
+      const localData = readLocalData();
+
       try {
-        setTransactions(JSON.parse(savedTransactions));
+        const [transactionsRes, installmentsRes, fixedBillsRes, overridesRes, salariesRes] = await Promise.all([
+          supabase.from(TABLES.transactions).select("*").order("date", { ascending: false }),
+          supabase.from(TABLES.installments).select("*"),
+          supabase.from(TABLES.fixedBills).select("*"),
+          supabase.from(TABLES.fixedBillMonthStatuses).select("*"),
+          supabase.from(TABLES.salariesByMonth).select("*"),
+        ]);
+
+        const hasError = [transactionsRes, installmentsRes, fixedBillsRes, overridesRes, salariesRes].some(
+          (result) => result.error
+        );
+
+        if (hasError) throw new Error("Falha ao carregar dados do Supabase.");
+
+        const dbTransactions = (transactionsRes.data ?? []).map(mapTransactionRow);
+        const dbInstallments = (installmentsRes.data ?? []).map(mapInstallmentRow);
+        const dbFixedBills = (fixedBillsRes.data ?? []).map(mapFixedBillRow);
+        const dbOverrides = (overridesRes.data ?? []).map(mapFixedBillOverrideRow);
+        const dbSalaries = mapSalaryRows(salariesRes.data ?? []);
+
+        const hasDbData =
+          dbTransactions.length > 0 ||
+          dbInstallments.length > 0 ||
+          dbFixedBills.length > 0 ||
+          dbOverrides.length > 0 ||
+          Object.keys(dbSalaries).length > 0;
+
+        if (!cancelled) {
+          if (hasDbData) {
+            setTransactions(dbTransactions);
+            setInstallments(dbInstallments);
+            setFixedBills(dbFixedBills);
+            setFixedBillOverrides(dbOverrides);
+            setSalaryByMonth(dbSalaries);
+          } else {
+            setTransactions(localData.transactions);
+            setInstallments(localData.installments);
+            setFixedBills(localData.fixedBills);
+            setFixedBillOverrides(localData.fixedBillOverrides);
+            setSalaryByMonth(localData.salaries);
+          }
+        }
+
+        const hasLocalData =
+          localData.transactions.length > 0 ||
+          localData.installments.length > 0 ||
+          localData.fixedBills.length > 0 ||
+          localData.fixedBillOverrides.length > 0 ||
+          Object.keys(localData.salaries).length > 0;
+
+        if (!hasDbData && hasLocalData) {
+          const operations: PromiseLike<unknown>[] = [];
+
+          if (localData.transactions.length > 0) {
+            operations.push(
+              supabase.from(TABLES.transactions).upsert(
+                localData.transactions.map(transactionToRow),
+                { onConflict: "id" }
+              )
+            );
+          }
+
+          if (localData.installments.length > 0) {
+            operations.push(
+              supabase.from(TABLES.installments).upsert(
+                localData.installments.map(installmentToRow),
+                { onConflict: "id" }
+              )
+            );
+          }
+
+          if (localData.fixedBills.length > 0) {
+            operations.push(
+              supabase.from(TABLES.fixedBills).upsert(
+                localData.fixedBills.map(fixedBillToRow),
+                { onConflict: "id" }
+              )
+            );
+          }
+
+          if (localData.fixedBillOverrides.length > 0) {
+            operations.push(
+              supabase.from(TABLES.fixedBillMonthStatuses).upsert(
+                localData.fixedBillOverrides.map(fixedBillOverrideToRow),
+                { onConflict: "id" }
+              )
+            );
+          }
+
+          const salaryRows = salaryEntriesToRows(localData.salaries);
+          if (salaryRows.length > 0) {
+            operations.push(
+              supabase.from(TABLES.salariesByMonth).upsert(salaryRows, { onConflict: "month" })
+            );
+          }
+
+          if (operations.length > 0) {
+            await Promise.all(operations);
+          }
+        }
       } catch {
-        localStorage.removeItem(STORAGE_KEYS.transactions);
+        if (!cancelled) {
+          setTransactions(localData.transactions);
+          setInstallments(localData.installments);
+          setFixedBills(localData.fixedBills);
+          setFixedBillOverrides(localData.fixedBillOverrides);
+          setSalaryByMonth(localData.salaries);
+        }
       }
     }
-    if (savedInstallments) {
-      try {
-        setInstallments(JSON.parse(savedInstallments));
-      } catch {
-        localStorage.removeItem(STORAGE_KEYS.installments);
-      }
-    }
-    if (savedSalaries) {
-      try {
-        setSalaryByMonth(JSON.parse(savedSalaries));
-      } catch {
-        localStorage.removeItem(STORAGE_KEYS.salaries);
-      }
-    }
-    if (savedFixedBills) {
-      try {
-        setFixedBills(JSON.parse(savedFixedBills));
-      } catch {
-        localStorage.removeItem(STORAGE_KEYS.fixedBills);
-      }
-    }
-    if (savedFixedBillsOverrides) {
-      try {
-        setFixedBillOverrides(JSON.parse(savedFixedBillsOverrides));
-      } catch {
-        localStorage.removeItem(STORAGE_KEYS.fixedBillsOverrides);
-      }
-    }
+
+    loadData();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -448,7 +645,7 @@ export default function Home() {
   const totalMonth = totalTransactionsMonth + totalInstallmentsMonth + totalFixedBillsMonth;
   const realBalance = currentSalary - totalPaid;
   const projectedBalance = currentSalary - totalPaid - totalPending - totalInstallmentsMonth;
-  const committedPercent = currentSalary > 0 ? (totalMonth / currentSalary) * 100 : 0;
+  const committedPercent = getCommittedPercent(totalMonth, currentSalary);
 
   const nextMonthsForecast = useMemo(() => {
     return monthOptions.slice(0, 6).map((month) => {
@@ -589,7 +786,7 @@ export default function Home() {
     setShowFixedBillForm(false);
   }
 
-  function handleSubmitTransaction(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmitTransaction(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const parsedAmount = parseMoney(amount);
 
@@ -602,41 +799,39 @@ export default function Home() {
       return;
     }
 
+    const payload: Transaction = {
+      id: editingTransactionId || crypto.randomUUID(),
+      date,
+      description: description.trim(),
+      category,
+      amount: parsedAmount,
+      paymentMethod,
+      status,
+    };
+
+    const { error } = await supabase
+      .from(TABLES.transactions)
+      .upsert(transactionToRow(payload), { onConflict: "id" });
+
+    if (error) {
+      alert("Não foi possível salvar o lançamento no Supabase.");
+      return;
+    }
+
     if (transactionMode === "edit" && editingTransactionId) {
       setTransactions((prev) =>
         prev
-          .map((item) =>
-            item.id === editingTransactionId
-              ? {
-                  ...item,
-                  date,
-                  description: description.trim(),
-                  category,
-                  amount: parsedAmount,
-                  paymentMethod,
-                  status,
-                }
-              : item
-          )
+          .map((item) => (item.id === editingTransactionId ? payload : item))
           .sort((a, b) => b.date.localeCompare(a.date))
       );
     } else {
-      const newTransaction: Transaction = {
-        id: crypto.randomUUID(),
-        date,
-        description: description.trim(),
-        category,
-        amount: parsedAmount,
-        paymentMethod,
-        status,
-      };
-      setTransactions((prev) => [newTransaction, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
+      setTransactions((prev) => [payload, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
     }
 
     closeTransactionModal();
   }
 
-  function handleSubmitInstallment(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmitInstallment(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const parsedTotalAmount = parseMoney(installmentTotalAmount);
     const parsedInstallments = Number(installmentCount);
@@ -668,6 +863,15 @@ export default function Home() {
       notes: installmentNotes.trim(),
     };
 
+    const { error } = await supabase
+      .from(TABLES.installments)
+      .upsert(installmentToRow(payload), { onConflict: "id" });
+
+    if (error) {
+      alert("Não foi possível salvar o parcelado no Supabase.");
+      return;
+    }
+
     if (installmentMode === "edit" && editingInstallmentId) {
       setInstallments((prev) => prev.map((item) => (item.id === editingInstallmentId ? payload : item)));
     } else {
@@ -677,7 +881,7 @@ export default function Home() {
     closeInstallmentModal();
   }
 
-  function handleSubmitFixedBill(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmitFixedBill(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const parsedAmount = parseMoney(fixedBillAmount);
     const parsedDay = Number(fixedBillDay);
@@ -713,6 +917,15 @@ export default function Home() {
       notes: fixedBillNotes.trim(),
     };
 
+    const { error } = await supabase
+      .from(TABLES.fixedBills)
+      .upsert(fixedBillToRow(payload), { onConflict: "id" });
+
+    if (error) {
+      alert("Não foi possível salvar a conta fixa no Supabase.");
+      return;
+    }
+
     if (fixedBillMode === "edit" && editingFixedBillId) {
       setFixedBills((prev) => prev.map((item) => (item.id === editingFixedBillId ? payload : item)));
     } else {
@@ -722,31 +935,77 @@ export default function Home() {
     closeFixedBillModal();
   }
 
-  function handleDeleteTransaction(id: string) {
+  async function handleDeleteTransaction(id: string) {
     if (!window.confirm("Deseja excluir este lançamento?")) return;
+
+    const { error } = await supabase.from(TABLES.transactions).delete().eq("id", id);
+    if (error) {
+      alert("Não foi possível excluir o lançamento.");
+      return;
+    }
+
     setTransactions((prev) => prev.filter((item) => item.id !== id));
   }
 
-  function handleDeleteInstallment(id: string) {
+  async function handleDeleteInstallment(id: string) {
     if (!window.confirm("Deseja excluir esta compra parcelada?")) return;
+
+    const { error } = await supabase.from(TABLES.installments).delete().eq("id", id);
+    if (error) {
+      alert("Não foi possível excluir o parcelado.");
+      return;
+    }
+
     setInstallments((prev) => prev.filter((item) => item.id !== id));
   }
 
-  function handleDeleteFixedBill(id: string) {
+  async function handleDeleteFixedBill(id: string) {
     if (!window.confirm("Deseja excluir esta conta fixa?")) return;
+
+    const [overrideDelete, fixedBillDelete] = await Promise.all([
+      supabase.from(TABLES.fixedBillMonthStatuses).delete().eq("fixed_bill_id", id),
+      supabase.from(TABLES.fixedBills).delete().eq("id", id),
+    ]);
+
+    if (overrideDelete.error || fixedBillDelete.error) {
+      alert("Não foi possível excluir a conta fixa.");
+      return;
+    }
+
     setFixedBills((prev) => prev.filter((item) => item.id !== id));
     setFixedBillOverrides((prev) => prev.filter((item) => item.fixedBillId !== id));
   }
 
-  function handleToggleFixedBillActive(id: string) {
+  async function handleToggleFixedBillActive(id: string) {
+    const current = fixedBills.find((item) => item.id === id);
+    if (!current) return;
+
+    const nextActive = !current.active;
+    const { error } = await supabase
+      .from(TABLES.fixedBills)
+      .update({ active: nextActive })
+      .eq("id", id);
+
+    if (error) {
+      alert("Não foi possível alterar o status da conta fixa.");
+      return;
+    }
+
     setFixedBills((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, active: !item.active } : item))
+      prev.map((item) => (item.id === id ? { ...item, active: nextActive } : item))
     );
   }
 
-  function saveSalary() {
+  async function saveSalary() {
     const parsedSalary = parseMoney(salaryInput);
+
     if (!salaryInput.trim()) {
+      const { error } = await supabase.from(TABLES.salariesByMonth).delete().eq("month", selectedMonth);
+      if (error) {
+        alert("Não foi possível remover o salário deste mês.");
+        return;
+      }
+
       setSalaryByMonth((prev) => {
         const updated = { ...prev };
         delete updated[selectedMonth];
@@ -754,20 +1013,47 @@ export default function Home() {
       });
       return;
     }
+
     if (!parsedSalary || parsedSalary <= 0) {
       alert("Informe um salário válido para este mês.");
       return;
     }
+
+    const { error } = await supabase
+      .from(TABLES.salariesByMonth)
+      .upsert({ month: selectedMonth, salary: parsedSalary }, { onConflict: "month" });
+
+    if (error) {
+      alert("Não foi possível salvar o salário no Supabase.");
+      return;
+    }
+
     setSalaryByMonth((prev) => ({ ...prev, [selectedMonth]: parsedSalary }));
   }
 
-  function setFixedBillMonthAction(fixedBillId: string, month: string, action: FixedBillAction) {
+  async function setFixedBillMonthAction(fixedBillId: string, month: string, action: FixedBillAction) {
+    const existing = fixedBillOverrides.find(
+      (item) => item.fixedBillId === fixedBillId && item.month === month
+    );
+
+    const payload: FixedBillMonthOverride = existing
+      ? { ...existing, action }
+      : { id: crypto.randomUUID(), fixedBillId, month, action };
+
+    const { error } = await supabase
+      .from(TABLES.fixedBillMonthStatuses)
+      .upsert(fixedBillOverrideToRow(payload), { onConflict: "id" });
+
+    if (error) {
+      alert("Não foi possível salvar o status mensal da conta fixa.");
+      return;
+    }
+
     setFixedBillOverrides((prev) => {
-      const existing = prev.find((item) => item.fixedBillId === fixedBillId && item.month === month);
       if (existing) {
         return prev.map((item) => (item.id === existing.id ? { ...item, action } : item));
       }
-      return [...prev, { id: crypto.randomUUID(), fixedBillId, month, action }];
+      return [...prev, payload];
     });
   }
 
