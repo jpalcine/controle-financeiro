@@ -1139,7 +1139,7 @@ export default function Home() {
         </section>
 
         <section className="mb-6 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-          <details className="group rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200" open>
+          <details className="group rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <summary className="flex cursor-pointer list-none items-start justify-between gap-3 select-none">
               <div>
                 <p className="text-sm font-medium text-slate-500">Resumo automático do mês</p>
@@ -1167,7 +1167,7 @@ export default function Home() {
             </div>
           </details>
 
-          <details className="group rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200" open>
+          <details className="group rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <summary className="flex cursor-pointer list-none items-start justify-between gap-3 select-none">
               <div>
                 <p className="text-sm font-medium text-slate-500">Previsão dos próximos meses</p>
