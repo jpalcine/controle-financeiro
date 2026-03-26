@@ -917,8 +917,7 @@ export default function Home() {
       notes: fixedBillNotes.trim(),
     };
 
-    const { error } = await supabase
-      let error = null;
+    let error = null;
 
     if (fixedBillMode === "edit" && editingFixedBillId) {
       const res = await supabase
