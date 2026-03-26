@@ -918,8 +918,22 @@ export default function Home() {
     };
 
     const { error } = await supabase
-      .from(TABLES.fixedBills)
-      .upsert(fixedBillToRow(payload), { onConflict: "id" });
+      let error = null;
+
+    if (fixedBillMode === "edit" && editingFixedBillId) {
+      const res = await supabase
+        .from(TABLES.fixedBills)
+        .update(fixedBillToRow(payload))
+        .eq("id", editingFixedBillId);
+
+      error = res.error;
+    } else {
+      const res = await supabase
+        .from(TABLES.fixedBills)
+        .insert(fixedBillToRow(payload));
+
+      error = res.error;
+    }
 
     if (error) {
       alert("Não foi possível salvar a conta fixa no Supabase.");
