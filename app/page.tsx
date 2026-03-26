@@ -223,7 +223,7 @@ function fixedBillOverrideToRow(item: FixedBillMonthOverride) {
 }
 
 function salaryEntriesToRows(salaryByMonth: SalaryByMonth) {
-  return Object.entries(salaryByMonth).map(([month, salary]) => ({ month, salary }));
+  return Object.entries(salaryByMonth).map(([month, amount]) => ({ month, amount }));
 }
 
 function mapTransactionRow(row: any): Transaction {
@@ -277,7 +277,7 @@ function mapFixedBillOverrideRow(row: any): FixedBillMonthOverride {
 
 function mapSalaryRows(rows: any[]): SalaryByMonth {
   return rows.reduce<SalaryByMonth>((acc, row) => {
-    acc[String(row.month)] = Number(row.salary ?? 0);
+    acc[String(row.month)] = Number(row.amount ?? 0);
     return acc;
   }, {});
 }
@@ -1021,7 +1021,7 @@ export default function Home() {
 
     const { error } = await supabase
       .from(TABLES.salariesByMonth)
-      .upsert({ month: selectedMonth, salary: parsedSalary }, { onConflict: "month" });
+      .upsert({ month: selectedMonth, amount: parsedSalary }, { onConflict: "month" });
 
     if (error) {
       alert("Não foi possível salvar o salário no Supabase.");
