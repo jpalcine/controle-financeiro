@@ -291,7 +291,7 @@ function CollapsibleCard({
   label,
   value,
   color = "text-slate-900",
-  defaultOpen = false,
+  defaultOpen = true,
 }: {
   label: string;
   value: string;
